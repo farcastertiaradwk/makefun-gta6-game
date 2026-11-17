@@ -1,7 +1,10 @@
-/* SOLMAR HEAT — the shell around the canvas: full-screen game, HUD in the
-   corners, a minimap, and menu screens over the living city. Kept deliberately
-   flat: no frameworks, no web fonts, nothing fetched over the network. */
-html, body {
+/* SOLMAR HEAT — the shell around the canvas.
+   Full-screen game, HUD in the corners, a minimap, and menu screens over
+   the living city. Deliberately flat: no frameworks, no web fonts, nothing
+   fetched over the network. */
+
+html,
+body {
   margin: 0;
   padding: 0;
   height: 100%;
@@ -20,6 +23,7 @@ html, body {
   touch-action: none;
 }
 
+/* Visually hidden live region for screen readers. */
 #status {
   position: absolute;
   width: 1px;
@@ -31,7 +35,70 @@ html, body {
 
 .hidden { display: none !important; }
 
-/* ---- HUD: pointer-transparent, four corners plus centre lines ---- */
+/* ---------- Menu screens: dimmed overlay, centred column ---------- */
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(16, 20, 32, 0.82), rgba(16, 20, 32, 0.68));
+  color: #ffffff;
+  text-align: center;
+}
+.screen h1 {
+  margin: 0 0 8px;
+  font-size: 64px;
+  letter-spacing: 6px;
+  color: #ffd94d;
+  text-shadow: 0 4px 0 #b3541e, 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+.screen .tagline {
+  margin: 0 0 18px;
+  font-size: 19px;
+  color: #9fd8ff;
+}
+.screen .story {
+  max-width: 620px;
+  margin: 0 0 22px;
+  font-size: 16px;
+  line-height: 1.55;
+  color: #e8e8e8;
+}
+.screen .controls {
+  margin-top: 22px;
+  font-size: 13px;
+  color: #b9c4d0;
+}
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+.buttons button {
+  padding: 12px 26px;
+  border: 2px solid #ffd94d;
+  border-radius: 4px;
+  background: #1c2333;
+  color: #ffd94d;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.buttons button:hover {
+  background: #ffd94d;
+  color: #1c2333;
+}
+.buttons button:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* ---------- HUD: pointer-transparent, four corners plus centre lines ---------- */
 #hud {
   position: fixed;
   inset: 0;
@@ -41,7 +108,11 @@ html, body {
 }
 body:not(.playing) #hud { display: none; }
 
-#hud-top-left { position: absolute; top: 14px; left: 16px; }
+#hud-top-left {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+}
 #hud-stars {
   font-size: 26px;
   letter-spacing: 4px;
@@ -73,7 +144,11 @@ body:not(.playing) #hud { display: none; }
   text-align: right;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
 }
-#hud-cash { font-size: 26px; font-weight: 800; color: #7dff8a; }
+#hud-cash {
+  font-size: 26px;
+  font-weight: 800;
+  color: #7dff8a;
+}
 #hud-mission {
   margin-top: 4px;
   font-size: 13px;
@@ -81,10 +156,23 @@ body:not(.playing) #hud { display: none; }
   letter-spacing: 1px;
   color: #ffd94d;
 }
-#hud-objective { max-width: 420px; margin-top: 2px; font-size: 14px; }
-#hud-timer { margin-top: 2px; font-size: 16px; font-weight: 700; color: #ff9a5a; }
+#hud-objective {
+  max-width: 420px;
+  margin-top: 2px;
+  font-size: 14px;
+}
+#hud-timer {
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ff9a5a;
+}
 
-#hud-bottom-left { position: absolute; left: 16px; bottom: 16px; }
+#hud-bottom-left {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+}
 #minimap {
   border: 2px solid rgba(255, 255, 255, 0.65);
   background: #6f9c4e;
@@ -98,8 +186,15 @@ body:not(.playing) #hud { display: none; }
   text-align: right;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
 }
-#hud-ammo { font-size: 20px; font-weight: 700; }
-#hud-speed { font-size: 22px; font-weight: 800; color: #ffd94d; }
+#hud-ammo {
+  font-size: 20px;
+  font-weight: 700;
+}
+#hud-speed {
+  font-size: 22px;
+  font-weight: 800;
+  color: #ffd94d;
+}
 
 #hud-message {
   position: absolute;
@@ -124,59 +219,18 @@ body:not(.playing) #hud { display: none; }
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
 }
 
-/* ---- Menu screens: dimmed overlay, centred column ---- */
-.screen {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: linear-gradient(180deg, rgba(16, 20, 32, 0.82), rgba(16, 20, 32, 0.68));
-  color: #ffffff;
-  text-align: center;
-}
-.screen h1 {
-  margin: 0 0 8px;
-  font-size: 64px;
-  letter-spacing: 6px;
-  color: #ffd94d;
-  text-shadow: 0 4px 0 #b3541e, 0 8px 24px rgba(0, 0, 0, 0.6);
-}
-.screen .tagline { margin: 0 0 18px; font-size: 19px; color: #9fd8ff; }
-.screen .story {
-  max-width: 620px;
-  margin: 0 0 22px;
-  font-size: 16px;
-  line-height: 1.55;
-  color: #e8e8e8;
-}
-.screen .controls { margin-top: 22px; font-size: 13px; color: #b9c4d0; }
-.buttons { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-.buttons button {
-  padding: 12px 26px;
-  border: 2px solid #ffd94d;
-  border-radius: 4px;
-  background: #1c2333;
-  color: #ffd94d;
-  font-size: 17px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.buttons button:hover { background: #ffd94d; color: #1c2333; }
-.buttons button:focus-visible {
-  outline: 3px solid #ffffff;
-  outline-offset: 2px;
-}
-
-/* Small screens: shrink the title and the HUD so the game stays playable. */
+/* ---------- Small screens: shrink the title and the HUD ---------- */
 @media (max-width: 700px) {
-  .screen h1 { font-size: 40px; letter-spacing: 3px; }
+  .screen h1 {
+    font-size: 40px;
+    letter-spacing: 3px;
+  }
   .screen .story { font-size: 14px; }
   #hud-stars { font-size: 20px; }
   #hud-cash { font-size: 20px; }
   .bar { width: 130px; }
-  #minimap { width: 160px; height: 116px; }
+  #minimap {
+    width: 160px;
+    height: 116px;
+  }
 }

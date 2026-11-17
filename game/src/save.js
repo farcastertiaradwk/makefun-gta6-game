@@ -1,6 +1,9 @@
-// Progress in localStorage: the mission reached, cash, armour, ammo and
-// lifetime stats. The Safehouse and every finished mission write it;
-// Continue reads it back. A save that fails to parse is no save at all.
+// Progress in localStorage: the whole snapshot serializeWorld produces —
+// seed, position, health, cash, mission, wanted, lifetime stats. Continue
+// rebuilds the same seed and swaps the snapshot back in. A save that fails
+// to parse, or that is not our version, is no save at all.
+import { serializeWorld, deserializeWorld } from './world.js';
+
 const STORAGE_KEY = 'solmar-heat-save-v1';
 
 function parseSave() {
@@ -8,7 +11,7 @@ function parseSave() {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (typeof data.missionIndex !== 'number') return null;
+    if (data.version !== 1 || typeof data.missionIndex !== 'number') return null;
     return data;
   } catch {
     return null;
@@ -17,22 +20,18 @@ function parseSave() {
 
 export function saveGame(world) {
   try {
-    const data = {
-      missionIndex: world.missionIndex,
-      cash: world.cash,
-      armor: world.player.armor,
-      reserve: world.player.reserve,
-      stats: world.stats,
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeWorld(world)));
     return true;
   } catch {
     return false;
   }
 }
 
+// Returns a rebuilt world, or null when there is nothing to continue.
 export function loadGame() {
-  return parseSave();
+  const data = parseSave();
+  if (!data) return null;
+  return deserializeWorld(data);
 }
 
 export function hasSave() {

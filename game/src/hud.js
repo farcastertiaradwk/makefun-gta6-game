@@ -1,9 +1,10 @@
 // The HUD: DOM readouts (stars, health, cash, objective, prompts) plus a
 // live minimap canvas. The minimap is a tiny top-down map of Solmar with
 // the player, the police, the mission marker and the shops on it.
-import { WORLD, ROADS_X, ROADS_Y, ROAD_W, BEACH_Y, SEA_Y, HARBOUR, PLACES } from './config.js';
+import { MAP, LANES_X, LANES_Y, LANE_W, SHORE_Y, WATER_Y, HARBOR, SITES } from './config.js';
+import { STORY } from './missions.js';
 
-export function createHud() {
+export function makeHud() {
   const get = (id) => document.getElementById(id);
   return {
     stars: get('hud-stars'),
@@ -27,8 +28,8 @@ function starRow(wanted) {
   return out;
 }
 
-function showMission(hud, m) {
-  hud.missionTag.textContent = `MISSION ${m.index + 1}/6 — ${m.name || ''}`;
+function showJob(hud, m) {
+  hud.missionTag.textContent = `MISSION ${m.index + 1}/6 — ${STORY[m.index].name.toUpperCase()}`;
   hud.objective.textContent = m.objective || '';
   hud.timer.textContent = m.timer > 0 ? `⏱ ${Math.ceil(m.timer)}s` : '';
 }
@@ -46,7 +47,7 @@ export function updateHud(hud, world) {
   hud.healthFill.style.width = `${Math.max(0, player.health)}%`;
   hud.armorFill.style.width = `${Math.max(0, player.armor)}%`;
   hud.cash.textContent = `$${world.cash}`;
-  if (world.mission) showMission(hud, world.mission);
+  if (world.mission) showJob(hud, world.mission);
   else showRoam(hud);
   if (player.inCar) {
     hud.ammo.textContent = '';
@@ -55,8 +56,8 @@ export function updateHud(hud, world) {
     hud.ammo.textContent = `🔫 ${player.magazine} / ${player.reserve}${player.reloading > 0 ? ' …reloading' : ''}`;
     hud.speed.textContent = '';
   }
-  if (world.message && world.time < world.message.until) {
-    hud.message.textContent = world.message.text;
+  if (world.message && world.messageTimer > 0) {
+    hud.message.textContent = world.message;
     hud.message.style.opacity = '1';
   } else {
     hud.message.style.opacity = '0';
@@ -70,14 +71,14 @@ function paintMiniBase(ctx, w, h, sx, sy) {
   ctx.fillRect(0, 0, w, h);
   // Beach, then sea.
   ctx.fillStyle = '#e8cf9a';
-  ctx.fillRect(0, BEACH_Y * sy, w, (WORLD.h - BEACH_Y) * sy);
+  ctx.fillRect(0, SHORE_Y * sy, w, (MAP.h - SHORE_Y) * sy);
   ctx.fillStyle = '#2e7f9e';
-  ctx.fillRect(0, SEA_Y * sy, w, (WORLD.h - SEA_Y) * sy);
-  ctx.fillRect(HARBOUR.x * sx, HARBOUR.y0 * sy, (WORLD.w - HARBOUR.x) * sx, (HARBOUR.y1 - HARBOUR.y0) * sy);
+  ctx.fillRect(0, WATER_Y * sy, w, (MAP.h - WATER_Y) * sy);
+  ctx.fillRect(HARBOR.x * sx, HARBOR.y0 * sy, (MAP.w - HARBOR.x) * sx, (HARBOR.y1 - HARBOR.y0) * sy);
   // Roads.
   ctx.fillStyle = '#3c3f46';
-  for (const rx of ROADS_X) ctx.fillRect((rx - ROAD_W / 2) * sx, 0, ROAD_W * sx, h);
-  for (const ry of ROADS_Y) ctx.fillRect(0, (ry - ROAD_W / 2) * sy, w, ROAD_W * sy);
+  for (const rx of LANES_X) ctx.fillRect((rx - LANE_W / 2) * sx, 0, LANE_W * sx, h);
+  for (const ry of LANES_Y) ctx.fillRect(0, (ry - LANE_W / 2) * sy, w, LANE_W * sy);
   // Buildings as small blocks.
   ctx.fillStyle = '#8a7a66';
 }
@@ -86,13 +87,13 @@ export function drawMinimap(canvas, world) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
-  const sx = w / WORLD.w;
-  const sy = h / WORLD.h;
+  const sx = w / MAP.w;
+  const sy = h / MAP.h;
   paintMiniBase(ctx, w, h, sx, sy);
   // Shops.
   ctx.fillStyle = '#e8d44d';
   for (const key of ['gunshop', 'garage', 'safehouse', 'bank']) {
-    const p = PLACES[key];
+    const p = SITES[key];
     ctx.fillRect(p.x * sx - 2, p.y * sy - 2, 4, 4);
   }
   // Mission marker.

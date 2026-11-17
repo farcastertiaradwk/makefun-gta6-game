@@ -1,22 +1,32 @@
-// SOLMAR HEAT — the numbers that define the game. Everything tunable
-// lives in this one module: the map, the movement, the heat, the money,
-// the look. The rest of the code reads these and never hard-codes a value,
-// so one edit here rebalances the whole game.
+// SOLMAR HEAT — one place for every number the game runs on. The map
+// dimensions, the road grid, how fast Danny runs and drives, how heat
+// builds and cools, what things cost, the palette, and where the named
+// places sit. Nothing else in the code hard-codes a tunable value: change
+// a number here and the whole game rebalances around it.
 
-export const STEP = 1 / 60;
+export const TICK = 1 / 60;
 
-// The island: 2,600 wide, 1,900 tall. The sea is the southern wall, the
+// The viewport the camera frames: the driver runs at 1280x720, and the
+// camera clamps the view to the map around the player.
+export const VIEW = { w: 1280, h: 720 };
+
+// Sound: one master level, and the radio's four stations (the synth loop
+// cycles their chords; the names are what the HUD would show).
+export const AUDIO = { masterVolume: 0.5, engineVolume: 0.06, sirenVolume: 0.035 };
+export const STATIONS = ['SOLMAR FM', 'VICE 98', 'PALM 101', 'HARBOUR WAVE'];
+
+// The island is 2,600 wide and 1,900 tall. The sea is the southern wall;
 // harbour water hugs the eastern edge.
-export const WORLD = { w: 2600, h: 1900 };
-export const ROADS_X = [250, 650, 1050, 1450, 1850, 2250];
-export const ROADS_Y = [250, 600, 950, 1300, 1650];
-export const ROAD_W = 90;
-export const BEACH_Y = 1750;
-export const SEA_Y = 1840;
-export const HARBOUR = { x: 2420, y0: 300, y1: 950 };
+export const MAP = { w: 2600, h: 1900 };
+export const LANES_X = [250, 650, 1050, 1450, 1850, 2250];
+export const LANES_Y = [250, 600, 950, 1300, 1650];
+export const LANE_W = 90;
+export const SHORE_Y = 1750;
+export const WATER_Y = 1840;
+export const HARBOR = { x: 2420, y0: 300, y1: 950 };
 
-// On foot: walk, sprint, and the pistol Danny carries.
-export const PLAYER = {
+// Danny on foot: his walk and sprint, his health, and the pistol he carries.
+export const ONFOOT = {
   radius: 14,
   walkSpeed: 170,
   runSpeed: 265,
@@ -29,7 +39,7 @@ export const PLAYER = {
 };
 
 // Behind the wheel: arcade handling, top speed 430.
-export const CAR = {
+export const VEHICLE = {
   length: 46,
   width: 22,
   accel: 420,
@@ -41,12 +51,12 @@ export const CAR = {
   health: 100,
 };
 
-export const TRAFFIC_SPEED = 95;
-export const PED_SPEED = 38;
-export const PED_FLEE_SPEED = 78;
+export const CRUISE = 95;
+export const STROLL = 38;
+export const PANIC = 78;
 
 // Heat: how fast it grows per crime, and how it cools off.
-export const WANTED = {
+export const HEAT = {
   decaySeconds: 15,
   decayRange: 380,
   maxStars: 5,
@@ -58,9 +68,9 @@ export const WANTED = {
   hitCopCar: 1,
 };
 
-// The force: foot speed, shooting range and rhythm, pursuit speed,
-// how long a bust takes, how close a cop must stand, spawn pacing.
-export const POLICE = {
+// The force: foot speed, shooting range and rhythm, pursuit speed, how
+// long a bust takes, how close a cop must stand, spawn pacing.
+export const FORCE = {
   footSpeed: 185,
   footShootRange: 260,
   footShootInterval: 1.2,
@@ -70,8 +80,16 @@ export const POLICE = {
   spawnInterval: 2.2,
 };
 
+// Particles: how big a blast is, and how hard it shakes the camera.
+export const PARTICLE = {
+  burstBig: 26,
+  burstSmall: 14,
+  shakeBig: 14,
+  shakeSmall: 8,
+};
+
 // Cash: what Danny starts with, what each job pays, what the shops charge.
-export const ECONOMY = {
+export const PRICES = {
   startCash: 150,
   missionReward: [400, 600, 800, 900, 1500, 2500],
   ammoPrice: 60,
@@ -84,7 +102,7 @@ export const ECONOMY = {
 };
 
 // Sun-soaked Solmar: grass, sand, sea, asphalt, roofs, cars, the player.
-export const PALETTE = {
+export const COLORS = {
   grass: '#7fae5a',
   grassDark: '#6f9c4e',
   sand: '#e8cf9a',
@@ -126,7 +144,7 @@ export const PALETTE = {
 
 // Where everything happens: the safehouse, the shops, the bank, the docks,
 // the plaza, the lighthouse, the park.
-export const PLACES = {
+export const SITES = {
   safehouse: { x: 300, y: 1600, name: 'Sunset Safehouse' },
   gunshop: { x: 700, y: 300, name: 'Iron & Lead' },
   garage: { x: 1500, y: 300, name: 'Fix-It Garage' },

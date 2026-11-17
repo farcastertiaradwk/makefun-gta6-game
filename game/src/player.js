@@ -1,18 +1,18 @@
 // Danny on foot: WASD with sprint, mouse aim, a pistol with a magazine
 // and a reload, and getting in and out of cars. Driving lives in
 // vehicles.js; this file only walks, shoots and steals.
-import { PLAYER } from './config.js';
-import { isBlocked, moveCircle } from './city.js';
+import { ONFOOT } from './config.js';
+import { blocked, slideCircle } from './city.js';
 
-export function createPlayer(x, y) {
+export function makeWalker(x, y) {
   return {
     x,
     y,
     angle: 0,
-    radius: PLAYER.radius,
-    health: PLAYER.health,
+    radius: ONFOOT.radius,
+    health: ONFOOT.health,
     armor: 0,
-    magazine: PLAYER.magazine,
+    magazine: ONFOOT.magazine,
     reserve: 48,
     reloading: 0,
     fireCooldown: 0,
@@ -23,7 +23,7 @@ export function createPlayer(x, y) {
 }
 
 // Armour takes three fifths of a hit before health takes the rest.
-export function hurtPlayer(player, damage) {
+export function injure(player, damage) {
   let left = damage;
   if (player.armor > 0) {
     const absorbed = Math.min(player.armor, left * 0.6);
@@ -34,24 +34,27 @@ export function hurtPlayer(player, damage) {
   if (player.health < 0) player.health = 0;
 }
 
-function topUpMagazine(player) {
-  const need = PLAYER.magazine - player.magazine;
+function reloadMagazine(player) {
+  const need = ONFOOT.magazine - player.magazine;
   const take = Math.min(need, player.reserve);
   player.magazine += take;
   player.reserve -= take;
 }
 
-function firePistol(world, player) {
+function shootPistol(world, player) {
   player.magazine -= 1;
-  player.fireCooldown = PLAYER.fireInterval;
-  const spread = (world.random.next() - 0.5) * 0.08;
+  player.fireCooldown = ONFOOT.fireInterval;
+  world.lastShotAt = world.time;
+  world.lastShotX = player.x;
+  world.lastShotY = player.y;
+  const spread = (world.random.draw() - 0.5) * 0.08;
   const a = player.angle + spread;
   world.bullets.push({
     x: player.x + Math.cos(a) * 20,
     y: player.y + Math.sin(a) * 20,
-    vx: Math.cos(a) * PLAYER.bulletSpeed,
-    vy: Math.sin(a) * PLAYER.bulletSpeed,
-    damage: PLAYER.pistolDamage,
+    vx: Math.cos(a) * ONFOOT.bulletSpeed,
+    vy: Math.sin(a) * ONFOOT.bulletSpeed,
+    damage: ONFOOT.pistolDamage,
     from: 'player',
     life: 0.9,
   });
@@ -69,10 +72,10 @@ function firePistol(world, player) {
   world.addHeat(0.12);
 }
 
-export function updatePlayerOnFoot(world, dt, input, aimWorld) {
+export function stepOnFoot(world, dt, input, aimWorld) {
   const player = world.player;
   const axis = input.axis();
-  const speed = input.shift() ? PLAYER.runSpeed : PLAYER.walkSpeed;
+  const speed = input.shift() ? ONFOOT.runSpeed : ONFOOT.walkSpeed;
   let dx = 0;
   let dy = 0;
   if (axis.x !== 0 || axis.y !== 0) {
@@ -82,27 +85,27 @@ export function updatePlayerOnFoot(world, dt, input, aimWorld) {
   }
   player.moving = dx !== 0 || dy !== 0;
   player.speed = player.moving ? speed : 0;
-  moveCircle(world.city, player, dx, dy, false);
+  slideCircle(world.city, player, dx, dy, false);
   player.angle = Math.atan2(aimWorld.y - player.y, aimWorld.x - player.x);
 
   if (player.reloading > 0) {
     player.reloading -= dt;
-    if (player.reloading <= 0) topUpMagazine(player);
+    if (player.reloading <= 0) reloadMagazine(player);
   }
   if (player.fireCooldown > 0) player.fireCooldown -= dt;
 
   // Hold the mouse to fire while the magazine has anything in it.
   if (input.mouseDown && player.fireCooldown <= 0 && player.reloading <= 0) {
     if (player.magazine > 0) {
-      firePistol(world, player);
+      shootPistol(world, player);
     } else if (player.reserve > 0) {
-      player.reloading = PLAYER.reloadTime;
+      player.reloading = ONFOOT.reloadTime;
     }
   }
 }
 
 // The closest car the player could steal: in reach and not a wreck.
-export function nearestStealableCar(world, maxDist) {
+export function closestStealable(world, maxDist) {
   let best = null;
   let bestD = maxDist * maxDist;
   for (const car of world.cars) {
@@ -116,7 +119,7 @@ export function nearestStealableCar(world, maxDist) {
   return best;
 }
 
-export function enterCar(world, car) {
+export function getInCar(world, car) {
   world.player.inCar = car;
   car.kind = 'player';
   car.driver = 'player';
@@ -129,13 +132,13 @@ export function enterCar(world, car) {
   world.audio.pickup();
 }
 
-export function exitCar(world) {
+export function getOutOfCar(world) {
   const car = world.player.inCar;
   if (!car) return;
   // Step out on whichever side is not inside a building.
   let px = car.x + Math.cos(car.angle + Math.PI / 2) * 34;
   let py = car.y + Math.sin(car.angle + Math.PI / 2) * 34;
-  if (isBlocked(world.city, px, py, 14, false)) {
+  if (blocked(world.city, px, py, 14, false)) {
     px = car.x + Math.cos(car.angle - Math.PI / 2) * 34;
     py = car.y + Math.sin(car.angle - Math.PI / 2) * 34;
   }

@@ -7,91 +7,23 @@
 //
 // The story: Danny Reyes, a wheelman out of work, does jobs for Mara Voss
 // and the Harbour Crew to take Solmar back from Kane and the Vipers.
-import { STEP, WORLD, PLAYER, ECONOMY, PALETTE, PLACES, WANTED } from './config.js';
-import { createRandom } from './random.js';
-import { createCity, isBlocked } from './city.js';
-import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_MUTE, ACTION_INTERACT, ACTION_RELOAD } from './input.js';
-import { createAudio } from './audio.js';
-import { createPlayer, updatePlayerOnFoot, hurtPlayer, nearestStealableCar, enterCar, exitCar } from './player.js';
-import { createCar, updatePlayerCar, updateTraffic, updatePoliceCars, collideCars, wreckCar, spawnTrafficCars } from './vehicles.js';
-import { spawnPeds, updatePeds, checkRunOver, checkBulletHitPed } from './pedestrians.js';
-import { updateWanted, updateCops, updateHeli } from './police.js';
-import { MISSIONS, startMission, updateMission, updateEnemies } from './missions.js';
-import { updateParticles, spawnExplosion } from './effects.js';
-import { createHud, updateHud } from './hud.js';
-import { createRenderer } from './render.js';
+import { TICK, MAP, ONFOOT, PRICES, SITES } from './config.js';
+import { makeWorld, restartWorld, stepWorld } from './world.js';
+import { makeInput, KEY_CONFIRM, KEY_PAUSE, KEY_MUTE, KEY_INTERACT, KEY_RELOAD } from './input.js';
+import { makeWalker, getInCar, getOutOfCar, closestStealable } from './player.js';
+import { beginJob, STORY } from './missions.js';
+import { makeRenderer } from './render.js';
+import { makeHud, updateHud } from './hud.js';
 import { saveGame, loadGame, hasSave, clearSave } from './save.js';
 import { stageShot } from './shots.js';
 
 const MAX_FRAME = 0.25;
 const AUTOSAVE_SECONDS = 20;
 
-// A bare world: data only. The verbs are attached by createGame, and the
-// stock (cars, walkers, pickups) by stockWorld.
-function blankWorld(seedValue) {
-  const random = createRandom(seedValue);
-  const city = createCity(random);
-  return {
-    random,
-    city,
-    time: 0,
-    player: createPlayer(PLACES.safehouse.x, PLACES.safehouse.y),
-    cars: [],
-    peds: [],
-    cops: [],
-    enemies: [],
-    bullets: [],
-    particles: [],
-    floaters: [],
-    pickups: [],
-    heat: 0,
-    wanted: 0,
-    lastCrimeAt: -1000,
-    spawnTimer: 0,
-    cash: ECONOMY.startCash,
-    missionIndex: 0,
-    mission: null,
-    stats: { carsStolen: 0, pedsHit: 0, copsDown: 0, missionsDone: 0 },
-    camera: { x: 0, y: 0, shake: 0 },
-    message: null,
-    prompt: '',
-    interactHeld: false,
-    heli: null,
-    lastShotAt: -1000,
-    lastShotX: 0,
-    lastShotY: 0,
-    lastExplosionAt: -1000,
-    lastExplosionX: 0,
-    lastExplosionY: 0,
-    audio: null,
-    screen: 'title',
-    saveTimer: 0,
-  };
-}
-
-function fillWorld(world) {
-  // Traffic first, then the parked cars at the kerb, then the walkers.
-  spawnTrafficCars(world, 14);
-  for (const spot of world.city.parkedSpots) {
-    world.cars.push(createCar(spot.x, spot.y, spot.angle, world.random.pick(PALETTE.carColors), 'parked'));
-  }
-  spawnPeds(world, 22);
-  // Health and ammo scattered where a player on foot will find them.
-  world.pickups.push(
-    { x: 700, y: 700, kind: 'health', taken: false },
-    { x: 1500, y: 1000, kind: 'health', taken: false },
-    { x: 1900, y: 1400, kind: 'health', taken: false },
-    { x: 650, y: 1050, kind: 'ammo', taken: false },
-    { x: 1850, y: 550, kind: 'ammo', taken: false },
-    { x: 1050, y: 1450, kind: 'ammo', taken: false },
-  );
-}
-
-export function createGame({ canvas, hud, audio, input, seed }) {
-  const renderer = createRenderer(canvas);
-  const world = blankWorld(seed);
-  world.audio = audio;
-  fillWorld(world);
+export function buildGame({ canvas, hud, input, seed }) {
+  const renderer = makeRenderer(canvas);
+  const world = makeWorld(seed);
+  const audio = world.audio;
   let accumulator = 0;
 
   // --- screens (DOM overlays) --------------------------------------------
@@ -118,95 +50,57 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     }
   }
 
-  // --- the verbs the modules call back into --------------------------------
-  world.addHeat = (n) => {
-    world.heat = Math.min(WANTED.maxStars, world.heat + n);
-    world.wanted = Math.floor(world.heat);
-    world.lastCrimeAt = world.time;
-  };
-  world.setWanted = (n) => {
-    world.heat = n;
-    world.wanted = n;
-    world.lastCrimeAt = world.time;
-  };
-  world.showMessage = (text, seconds) => {
-    world.message = { text, until: world.time + (seconds || 4) };
-  };
-  world.floatText = (x, y, text, color) => {
-    world.floaters.push({ x, y, text, color: color || '#ffffff', life: 1.4, max: 1.4 });
-  };
-  world.explode = (x, y) => spawnExplosion(world, x, y, true);
-  world.busted = () => {
-    world.audio.fail();
-    setScreen('busted');
-  };
-  world.wasted = () => {
-    world.audio.fail();
-    setScreen('wasted');
-  };
-
   function sendPlayerHome() {
-    world.player = createPlayer(PLACES.safehouse.x, PLACES.safehouse.y);
+    world.player = makeWalker(SITES.safehouse.x, SITES.safehouse.y);
   }
 
   function startFresh() {
     clearSave();
     input.actions = 0;
-    world.cash = ECONOMY.startCash;
-    world.missionIndex = 0;
-    world.stats = { carsStolen: 0, pedsHit: 0, copsDown: 0, missionsDone: 0 };
-    sendPlayerHome();
-    // Clear police and wrecks, keep the parked cars, bring the traffic back.
-    world.cars = world.cars.filter((c) => c.kind === 'parked');
-    spawnTrafficCars(world, 14);
-    world.cops = [];
-    world.enemies = [];
-    world.bullets = [];
-    world.setWanted(0);
-    startMission(world, 0);
+    restartWorld(world, seed);
     setScreen('play');
-    world.showMessage(MISSIONS[0].briefing, 6);
-    world.audio.ensure();
+    world.showMessage(STORY[0].briefing);
+    audio.unlock();
   }
 
   function resumeSaved() {
-    const save = loadGame();
-    if (!save) {
+    const loaded = loadGame();
+    if (!loaded) {
       startFresh();
       return;
     }
     input.actions = 0;
-    world.cash = save.cash;
-    world.missionIndex = Math.min(save.missionIndex, MISSIONS.length - 1);
-    world.stats = save.stats || world.stats;
-    sendPlayerHome();
-    world.player.armor = save.armor || 0;
-    world.player.reserve = save.reserve || 48;
-    world.setWanted(0);
-    startMission(world, world.missionIndex);
+    // Swap the snapshot into the live world, keeping this session's audio.
+    // The snapshot's verbs close over the rebuilt world, not this one, so
+    // only data fields cross over — the live world's own verbs stay.
+    for (const key of Object.keys(loaded)) {
+      if (typeof loaded[key] !== 'function') world[key] = loaded[key];
+    }
+    world.audio = audio;
     setScreen('play');
-    world.showMessage(`Welcome back. ${MISSIONS[world.missionIndex].briefing}`, 6);
-    world.audio.ensure();
+    world.showMessage(`Welcome back. ${STORY[world.missionIndex].briefing}`);
+    audio.unlock();
   }
 
   function respawn(fine) {
     world.cash = Math.max(0, world.cash - fine);
     sendPlayerHome();
     world.cops = [];
-    world.setWanted(0);
+    world.wanted = 0;
+    world.heat = 0;
     world.heli = null;
     for (const c of world.cars) {
       if (c.kind === 'police') c.wrecked = true;
     }
-    startMission(world, world.missionIndex);
+    beginJob(world, world.missionIndex);
     setScreen('play');
   }
 
-  // --- shops, prompts, pickups ---------------------------------------------
+  // --- shops, prompts -------------------------------------------------------
   function shopNearby() {
     const p = world.player;
     for (const key of ['gunshop', 'garage', 'safehouse']) {
-      const s = PLACES[key];
+      const s = SITES[key];
       if (Math.hypot(s.x - p.x, s.y - p.y) < 80) return key;
     }
     return null;
@@ -214,47 +108,48 @@ export function createGame({ canvas, hud, audio, input, seed }) {
 
   function buyAmmo() {
     const p = world.player;
-    if (world.cash < ECONOMY.ammoPrice) {
-      world.showMessage('Not enough cash for ammo.', 2);
+    if (world.cash < PRICES.ammoPrice) {
+      world.showMessage('Not enough cash for ammo.');
       return;
     }
     if (p.reserve >= 240) {
-      world.showMessage('Ammo full.', 2);
+      world.showMessage('Ammo full.');
       return;
     }
-    world.cash -= ECONOMY.ammoPrice;
-    p.reserve += ECONOMY.ammoAmount;
-    world.showMessage(`Bought ${ECONOMY.ammoAmount} rounds.`, 2);
-    world.audio.pickup();
+    world.cash -= PRICES.ammoPrice;
+    p.reserve += PRICES.ammoAmount;
+    world.showMessage(`Bought ${PRICES.ammoAmount} rounds.`);
+    audio.pickup();
   }
 
   function useGarage() {
     const p = world.player;
-    if (p.inCar && p.inCar.health < 100 && world.cash >= ECONOMY.repairPrice) {
-      world.cash -= ECONOMY.repairPrice;
+    if (p.inCar && p.inCar.health < 100 && world.cash >= PRICES.repairPrice) {
+      world.cash -= PRICES.repairPrice;
       p.inCar.health = 100;
       p.inCar.wrecked = false;
-      world.showMessage('Car repaired.', 2);
-      world.audio.pickup();
-    } else if (world.wanted > 0 && world.cash >= ECONOMY.layLowPerStar * world.wanted) {
-      world.cash -= ECONOMY.layLowPerStar * world.wanted;
-      world.setWanted(0);
-      world.showMessage('Lay low. The heat is off — for now.', 3);
-      world.audio.pickup();
+      world.showMessage('Car repaired.');
+      audio.pickup();
+    } else if (world.wanted > 0 && world.cash >= PRICES.layLowPerStar * world.wanted) {
+      world.cash -= PRICES.layLowPerStar * world.wanted;
+      world.wanted = 0;
+      world.heat = 0;
+      world.showMessage('Lay low. The heat is off — for now.');
+      audio.pickup();
     } else if (world.wanted > 0) {
-      world.showMessage(`Lay low costs $${ECONOMY.layLowPerStar * world.wanted}.`, 2);
+      world.showMessage(`Lay low costs $${PRICES.layLowPerStar * world.wanted}.`);
     } else if (p.inCar) {
-      world.showMessage('Car is already in good shape.', 2);
+      world.showMessage('Car is already in good shape.');
     } else {
-      world.showMessage('Bring a car here to repair it.', 2);
+      world.showMessage('Bring a car here to repair it.');
     }
   }
 
   function useSafehouse() {
-    world.player.health = PLAYER.health;
+    world.player.health = ONFOOT.health;
     saveGame(world);
-    world.showMessage('Healed up. Progress saved.', 3);
-    world.audio.pickup();
+    world.showMessage('Healed up. Progress saved.');
+    audio.pickup();
   }
 
   function shopAction(key) {
@@ -269,143 +164,38 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     if (shop === 'gunshop') world.prompt = 'E — Buy ammo $60';
     else if (shop === 'garage') world.prompt = player.inCar ? 'E — Repair $80 / Lay low' : 'E — Lay low (clear wanted)';
     else if (shop === 'safehouse') world.prompt = 'E — Heal & save';
-    else if (!player.inCar && nearestStealableCar(world, 60)) world.prompt = 'E — Steal car';
+    else if (!player.inCar && closestStealable(world, 60)) world.prompt = 'E — Steal car';
     else world.prompt = '';
   }
 
-  function takePickup(pk) {
-    const p = world.player;
-    pk.taken = true;
-    if (pk.kind === 'health') {
-      p.health = Math.min(PLAYER.health, p.health + 30);
-      world.floatText(pk.x, pk.y - 20, '+30 HEALTH', '#7dff8a');
-    } else if (pk.kind === 'ammo') {
-      p.reserve += 24;
-      world.floatText(pk.x, pk.y - 20, '+24 AMMO', '#ffd94d');
-    } else if (pk.kind === 'package') {
-      world.floatText(pk.x, pk.y - 20, 'PACKAGE SECURED', '#ffd94d');
-    }
-    world.audio.pickup();
-  }
-
-  function updatePickups() {
-    const p = world.player;
-    for (const pk of world.pickups) {
-      if (pk.taken) continue;
-      if (Math.hypot(pk.x - p.x, pk.y - p.y) < 32) takePickup(pk);
-    }
-  }
-
-  // --- bullets ---------------------------------------------------------------
-  function foeDown(e) {
-    spawnExplosion(world, e.x, e.y, false);
-    if (e.boss) {
-      world.cash += 500;
-      world.floatText(e.x, e.y - 24, 'KANE DOWN +$500', '#ffd94d');
-    } else {
-      world.cash += 50;
-      world.floatText(e.x, e.y - 24, '+$50', '#ffd94d');
-    }
-    world.audio.pickup();
-  }
-
-  function bulletVsWorld(b) {
-    // A player bullet: pedestrians, then cops, then rivals, then cars.
-    if (checkBulletHitPed(world, b)) return true;
-    for (const cop of world.cops) {
-      if (Math.hypot(cop.x - b.x, cop.y - b.y) < 16) {
-        cop.health -= b.damage;
-        world.audio.hit();
-        return true;
-      }
-    }
-    for (const e of world.enemies) {
-      if (e.health > 0 && Math.hypot(e.x - b.x, e.y - b.y) < 16) {
-        e.health -= b.damage;
-        world.audio.hit();
-        if (e.health <= 0) foeDown(e);
-        return true;
-      }
-    }
-    for (const car of world.cars) {
-      if (car.wrecked) continue;
-      if (Math.hypot(car.x - b.x, car.y - b.y) < 24) {
-        car.health -= b.damage;
-        if (car.health <= 0) wreckCar(world, car);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function bulletVsPlayer(b) {
-    const p = world.player;
-    if (p.inCar) {
-      const car = p.inCar;
-      if (Math.hypot(car.x - b.x, car.y - b.y) < 24) {
-        car.health -= b.damage;
-        if (car.health <= 0) wreckCar(world, car);
-        return true;
-      }
-      return false;
-    }
-    if (Math.hypot(p.x - b.x, p.y - b.y) < 14) {
-      hurtPlayer(p, b.damage);
-      world.audio.hit();
-      if (p.health <= 0) world.wasted();
-      return true;
-    }
-    return false;
-  }
-
-  function updateBullets(dt) {
-    for (const b of world.bullets) {
-      b.life -= dt;
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      if (b.life <= 0) continue;
-      if (isBlocked(world.city, b.x, b.y, 2, false)) {
-        world.particles.push({ kind: 'spark', x: b.x, y: b.y, vx: 0, vy: 0, life: 0.15, max: 0.15, size: 6 });
-        b.life = 0;
-        continue;
-      }
-      if (b.from === 'player') {
-        if (bulletVsWorld(b)) b.life = 0;
-      } else if (bulletVsPlayer(b)) {
-        b.life = 0;
-      }
-    }
-    world.bullets = world.bullets.filter((b) => b.life > 0);
-  }
-
   function resolveMission() {
+    if (world.screen !== 'play') return;
     const m = world.mission;
     if (!m) return;
     if (m.status === 'complete') {
-      world.cash += MISSIONS[m.index].reward;
+      world.cash += STORY[m.index].reward;
       world.stats.missionsDone += 1;
       saveGame(world);
-      world.audio.mission();
-      document.getElementById('mission-title').textContent = `MISSION COMPLETE — ${MISSIONS[m.index].name}`;
-      document.getElementById('mission-text').textContent = `${m.reason} Reward: $${MISSIONS[m.index].reward}.`;
+      audio.missionComplete();
+      document.getElementById('mission-title').textContent = `MISSION COMPLETE — ${STORY[m.index].name}`;
+      document.getElementById('mission-text').textContent = `${m.reason} Reward: $${STORY[m.index].reward}.`;
       setScreen('mission');
     } else if (m.status === 'failed') {
-      world.audio.fail();
-      document.getElementById('failed-text').textContent = `${MISSIONS[m.index].name}: ${m.reason}`;
+      audio.missionFailed();
+      document.getElementById('failed-text').textContent = `${STORY[m.index].name}: ${m.reason}`;
       setScreen('failed');
     }
   }
 
   function viewFor(player) {
     return {
-      x: Math.max(0, Math.min(WORLD.w - canvas.clientWidth, player.x - canvas.clientWidth / 2)),
-      y: Math.max(0, Math.min(WORLD.h - canvas.clientHeight, player.y - canvas.clientHeight / 2)),
+      x: Math.max(0, Math.min(MAP.w - canvas.clientWidth, player.x - canvas.clientWidth / 2)),
+      y: Math.max(0, Math.min(MAP.h - canvas.clientHeight, player.y - canvas.clientHeight / 2)),
     };
   }
 
-  // --- one fixed step of the world --------------------------------------------
-  function stepWorld(dt, stepInput) {
-    world.time += dt;
+  // --- one fixed step of the game -------------------------------------------
+  function stepGame(dt, stepInput) {
     const player = world.player;
     const actions = stepInput.takeActions();
     world.interactHeld = stepInput.held('e');
@@ -413,44 +203,27 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     const cam = viewFor(player);
     const aimWorld = { x: cam.x + stepInput.mouseX, y: cam.y + stepInput.mouseY };
 
-    if (actions & ACTION_INTERACT) {
+    if (actions & KEY_INTERACT) {
       if (player.inCar) {
-        exitCar(world);
+        getOutOfCar(world);
       } else {
         const shop = shopNearby();
         if (shop) shopAction(shop);
         else {
-          const car = nearestStealableCar(world, 60);
-          if (car) enterCar(world, car);
+          const car = closestStealable(world, 60);
+          if (car) getInCar(world, car);
         }
       }
     }
-    if (actions & ACTION_RELOAD && player.reloading <= 0 && player.reserve > 0) {
-      player.reloading = PLAYER.reloadTime;
+    if (actions & KEY_RELOAD && player.reloading <= 0 && player.reserve > 0) {
+      player.reloading = ONFOOT.reloadTime;
     }
 
-    if (player.inCar) updatePlayerCar(world, dt, stepInput);
-    else updatePlayerOnFoot(world, dt, stepInput, aimWorld);
-
-    updateTraffic(world, dt);
-    updatePoliceCars(world, dt);
-    collideCars(world);
-    updatePeds(world, dt);
-    checkRunOver(world);
-    updateCops(world, dt);
-    updateHeli(world, dt);
-    updateWanted(world, dt);
-    updateEnemies(world, dt);
-    updateBullets(dt);
-    updatePickups();
-    updateParticles(world, dt);
-    updateMission(world, dt);
-
+    stepWorld(world, dt, stepInput, aimWorld);
     refreshPrompt();
-    if (world.camera.shake > 0) world.camera.shake = Math.max(0, world.camera.shake - dt * 30);
-    if (player.health <= 0 && world.screen === 'play') world.wasted();
-
     resolveMission();
+    if (world.screen === 'wasted') setScreen('wasted');
+    else if (world.screen === 'busted') setScreen('busted');
 
     // A quiet autosave while playing, so quitting to the title never loses
     // more than a few seconds of progress.
@@ -465,37 +238,38 @@ export function createGame({ canvas, hud, audio, input, seed }) {
 
   // On the title screen the city lives on its own: no player input.
   const titleInput = {
+    keys: new Set(),
+    mouseX: 0,
+    mouseY: 0,
+    mouseDown: false,
     axis: () => ({ x: 0, y: 0 }),
     held: () => false,
     shift: () => false,
-    mouseDown: false,
-    mouseX: 0,
-    mouseY: 0,
     takeActions: () => 0,
   };
 
-  // --- the frame update ---------------------------------------------------------
+  // --- the frame update -----------------------------------------------------
   function update(dt, frameInput) {
     const actions = frameInput.takeActions();
-    if (actions & ACTION_PAUSE) {
+    if (actions & KEY_PAUSE) {
       if (world.screen === 'play') setScreen('pause');
       else if (world.screen === 'pause') setScreen('play');
     }
-    if (actions & ACTION_MUTE) world.audio.toggleMute();
-    if (actions & ACTION_CONFIRM) {
+    if (actions & KEY_MUTE) audio.setMuted(!audio.muted);
+    if (actions & KEY_CONFIRM) {
       if (world.screen === 'title') {
         if (hasSave()) resumeSaved();
         else startFresh();
       }
     }
     // Hand the rest back: the world step is the only consumer of interact/reload.
-    frameInput.actions |= (actions & ~(ACTION_PAUSE | ACTION_MUTE | ACTION_CONFIRM));
+    frameInput.actions |= (actions & ~(KEY_PAUSE | KEY_MUTE | KEY_CONFIRM));
     if (world.screen === 'play' || world.screen === 'title') {
       accumulator += Math.min(dt, MAX_FRAME);
-      while (accumulator >= STEP) {
+      while (accumulator >= TICK) {
         if (world.screen !== 'play' && world.screen !== 'title') break;
-        stepWorld(STEP, world.screen === 'title' ? titleInput : frameInput);
-        accumulator -= STEP;
+        stepGame(TICK, world.screen === 'title' ? titleInput : frameInput);
+        accumulator -= TICK;
       }
     } else {
       accumulator = 0;
@@ -503,14 +277,14 @@ export function createGame({ canvas, hud, audio, input, seed }) {
   }
 
   function render() {
-    renderer.draw(world, world.screen);
+    renderer.draw(world);
     if (world.screen === 'play') updateHud(hud, world);
   }
 
-  // --- buttons ------------------------------------------------------------------
+  // --- buttons --------------------------------------------------------------
   const on = (id, fn) => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('click', () => { audio.ensure(); fn(); });
+    if (el) el.addEventListener('click', () => { audio.unlock(); fn(); });
   };
   on('btn-new', startFresh);
   on('btn-continue', resumeSaved);
@@ -519,40 +293,44 @@ export function createGame({ canvas, hud, audio, input, seed }) {
   on('btn-quit', () => { saveGame(world); setScreen('title'); });
   on('btn-next-mission', () => {
     world.missionIndex += 1;
-    if (world.missionIndex >= MISSIONS.length) {
+    if (world.missionIndex >= STORY.length) {
       document.getElementById('victory-stats').textContent =
         `Missions ${world.stats.missionsDone}/6 · Cars stolen ${world.stats.carsStolen} · Cops down ${world.stats.copsDown} · Cash $${world.cash}`;
       setScreen('victory');
     } else {
-      startMission(world, world.missionIndex);
+      beginJob(world, world.missionIndex);
       setScreen('play');
-      world.showMessage(MISSIONS[world.missionIndex].briefing, 6);
+      world.showMessage(STORY[world.missionIndex].briefing);
     }
   });
   on('btn-retry', () => {
-    startMission(world, world.missionIndex);
+    beginJob(world, world.missionIndex);
     setScreen('play');
   });
-  on('btn-respawn', () => respawn(ECONOMY.wastedFine));
-  on('btn-respawn-busted', () => respawn(ECONOMY.bustFine));
+  on('btn-respawn', () => respawn(PRICES.wastedFine));
+  on('btn-respawn-busted', () => respawn(PRICES.bustFine));
   on('btn-freeroam', () => {
     world.mission = null;
-    world.setWanted(0);
+    world.wanted = 0;
+    world.heat = 0;
     setScreen('play');
-    world.showMessage('Free roam. Solmar is yours — the story is done, the city is not.', 5);
+    world.showMessage('Free roam. Solmar is yours — the story is done, the city is not.');
   });
   on('btn-victory-restart', () => startFresh());
 
-  // --- the game object ------------------------------------------------------------
+  // --- the game object ------------------------------------------------------
   const game = {
     world,
     seed,
     fakeInput: null,
-    startMission: (i) => startMission(world, i),
+    startMission: (i) => {
+      world.missionIndex = i;
+      beginJob(world, i);
+    },
     setWanted: (n) => world.setWanted(n),
     newGame: startFresh,
     continueGame: resumeSaved,
-    step: (dt, inputOverride) => stepWorld(dt, inputOverride || input),
+    step: (dt, inputOverride) => stepGame(dt, inputOverride || input),
     update,
     render,
   };
@@ -561,17 +339,16 @@ export function createGame({ canvas, hud, audio, input, seed }) {
   return game;
 }
 
-// --- boot -------------------------------------------------------------------------
+// --- boot -------------------------------------------------------------------
 const params = new URLSearchParams(window.location.search);
 const shot = params.get('shot');
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
 const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
 
 const canvas = document.getElementById('game');
-const hud = createHud();
-const audio = createAudio();
-const input = createInput(canvas);
-const game = createGame({ canvas, hud, audio, input, seed });
+const hud = makeHud();
+const input = makeInput(canvas);
+const game = buildGame({ canvas, hud, input, seed });
 
 // Test hooks: the playtest driver reads state and drives the game.
 window.__game = game;
@@ -600,6 +377,6 @@ if (shot) {
     game.update(dt, input);
     game.render();
   };
-  game.world.audio.ensure();
+  game.world.audio.unlock();
   requestAnimationFrame(frame);
 }

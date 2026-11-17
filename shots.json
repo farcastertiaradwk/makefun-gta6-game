@@ -1,6 +1,1 @@
-[
-  {"query": "?shot=cover&seed=7", "name": "1-cover.jpg"},
-  {"query": "?shot=street&seed=7", "name": "2-street.jpg"},
-  {"query": "?shot=heli&seed=7", "name": "3-heli.jpg"},
-  {"query": "?shot=bank&seed=7", "name": "4-bank.jpg"}
-]
+[{"name":"1-cover.jpg","query":"?shot=cover&seed=7"},{"name":"2-street.jpg","query":"?shot=street&seed=7"},{"name":"3-heli.jpg","query":"?shot=heli&seed=7"},{"name":"4-bank.jpg","query":"?shot=bank&seed=7"}]

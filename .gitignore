@@ -4,5 +4,10 @@ out/
 # Local run logs from the playtest driver and the static server.
 *.log
 
+# Playwright screenshots taken while iterating (the shipped ones live in
+# screenshots/ and are tracked).
+shots-debug/
+
 # OS artefacts that never belong in the entry.
 .DS_Store
+Thumbs.db
