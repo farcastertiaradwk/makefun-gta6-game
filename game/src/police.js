@@ -38,17 +38,20 @@ function nearestCopDistance(world) {
   return best;
 }
 
-export function updateWanted(world, dt) {
+function coolHeat(world) {
+  // Staying clean and out of sight cools the heat down, one star at a time.
   const now = world.time;
-  if (world.wanted > 0) {
-    // Staying clean and out of sight cools the heat down, one star at a time.
-    if (now - world.lastCrimeAt > WANTED.decaySeconds && nearestCopDistance(world) > WANTED.decayRange) {
-      world.heat = Math.max(0, world.heat - 1);
-      world.wanted = Math.floor(world.heat);
-      world.lastCrimeAt = now;
-      world.floatText(world.player.x, world.player.y - 34, 'HEAT COOLING…', '#9fd8ff');
-    }
+  if (world.wanted > 0
+    && now - world.lastCrimeAt > WANTED.decaySeconds
+    && nearestCopDistance(world) > WANTED.decayRange) {
+    world.heat = Math.max(0, world.heat - 1);
+    world.wanted = Math.floor(world.heat);
+    world.lastCrimeAt = now;
+    world.floatText(world.player.x, world.player.y - 34, 'HEAT COOLING…', '#9fd8ff');
   }
+}
+
+function keepHelicopter(world, dt) {
   // A helicopter at 4 stars keeps the heat on: it never cools while it watches.
   if (world.wanted >= 4 && !world.heli) {
     world.heli = { angle: 0, radius: 150 };
@@ -57,27 +60,34 @@ export function updateWanted(world, dt) {
   }
   if (world.heli) {
     world.heli.angle += dt * 0.5;
-    world.lastCrimeAt = now; // watched: no cooling
+    world.lastCrimeAt = world.time; // watched: no cooling
   }
+}
 
+function keepNumbersUp(world, dt) {
   // Keep the right number of cops on the street for the current heat.
   const wantCops = world.wanted >= 1 ? Math.min(2 + world.wanted, 7) : 0;
   const wantCars = world.wanted >= 2 ? Math.min(world.wanted - 1, 4) : 0;
   world.spawnTimer -= dt;
-  if (world.spawnTimer <= 0) {
-    world.spawnTimer = POLICE.spawnInterval;
-    if (world.cops.length < wantCops) {
-      const at = spawnEdgePoint(world);
-      world.cops.push(createCop(at.x, at.y));
-    }
-    const policeCars = world.cars.filter((c) => c.kind === 'police' && !c.wrecked).length;
-    if (policeCars < wantCars) {
-      const at = spawnEdgePoint(world);
-      const car = createCar(at.x, at.y, world.random.range(0, Math.PI * 2), '#2e5fa3', 'police');
-      car.speed = 200;
-      world.cars.push(car);
-    }
+  if (world.spawnTimer > 0) return;
+  world.spawnTimer = POLICE.spawnInterval;
+  if (world.cops.length < wantCops) {
+    const at = spawnEdgePoint(world);
+    world.cops.push(createCop(at.x, at.y));
   }
+  const policeCars = world.cars.filter((c) => c.kind === 'police' && !c.wrecked).length;
+  if (policeCars < wantCars) {
+    const at = spawnEdgePoint(world);
+    const car = createCar(at.x, at.y, world.random.range(0, Math.PI * 2), '#2e5fa3', 'police');
+    car.speed = 200;
+    world.cars.push(car);
+  }
+}
+
+export function updateWanted(world, dt) {
+  coolHeat(world);
+  keepHelicopter(world, dt);
+  keepNumbersUp(world, dt);
   // Sirens while any police is close.
   const sirenOn = world.wanted > 0 && nearestCopDistance(world) < 900;
   world.audio.setSiren(sirenOn);

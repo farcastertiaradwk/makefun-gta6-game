@@ -1,5 +1,6 @@
-// Particles, floating text and explosions: the juice. Particles are plain data;
-// the renderer draws them. Explosions also shake the camera and make noise.
+// Particles, floating text and explosions: the juice. Particles are plain
+// data; the renderer draws them. Explosions also shake the camera and make
+// noise.
 export function updateParticles(world, dt) {
   for (const p of world.particles) {
     p.life -= dt;

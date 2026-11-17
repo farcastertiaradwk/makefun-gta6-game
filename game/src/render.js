@@ -1,7 +1,7 @@
-// The renderer: a top-down camera that follows the player, drawing the ground,
-// roads, buildings with a little fake height, trees, cars, people, bullets and
-// particles. Sun-soaked palette, crisp shapes — the game must read at a glance
-// when the judge shrinks a screenshot.
+// The renderer: a top-down camera that follows the player, drawing the
+// ground, roads, buildings with a little fake height, trees, cars, people,
+// bullets and particles. Sun-soaked palette, crisp shapes — the game must
+// read at a glance when the judge shrinks a screenshot.
 import { WORLD, ROADS_X, ROADS_Y, ROAD_W, BEACH_Y, SEA_Y, HARBOUR, PALETTE, PLACES } from './config.js';
 
 export function createRenderer(canvas) {
@@ -35,8 +35,7 @@ export function createRenderer(canvas) {
     return { x: cx, y: cy };
   }
 
-  function drawGround(world, cam) {
-    // Grass base.
+  function drawGrass(cam) {
     ctx.fillStyle = PALETTE.grass;
     ctx.fillRect(0, 0, viewW, viewH);
     // Mow stripes for a little texture.
@@ -49,6 +48,9 @@ export function createRenderer(canvas) {
         ctx.fillRect(x - cam.x, y - cam.y, stripe, stripe);
       }
     }
+  }
+
+  function drawWater(world, cam) {
     // Beach, then sea with wave lines.
     if (BEACH_Y - cam.y < viewH && SEA_Y - cam.y > 0) {
       ctx.fillStyle = PALETTE.sand;
@@ -77,6 +79,9 @@ export function createRenderer(canvas) {
     for (const py of [380, 520, 660, 800]) {
       ctx.fillRect(HARBOUR.x - cam.x, py - cam.y, 130, 26);
     }
+  }
+
+  function drawRoads(cam) {
     // Roads with sidewalks, centre dashes and crosswalks.
     ctx.fillStyle = PALETTE.sidewalk;
     for (const rx of ROADS_X) ctx.fillRect(rx - ROAD_W / 2 - 10 - cam.x, -cam.y, ROAD_W + 20, WORLD.h);
@@ -105,6 +110,9 @@ export function createRenderer(canvas) {
         }
       }
     }
+  }
+
+  function drawParkAndPlaza(cam) {
     // Palm Park: paths and a pond.
     ctx.fillStyle = '#5d8a48';
     ctx.fillRect(1100 - cam.x, 1000 - cam.y, 300, 250);
@@ -122,12 +130,18 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.arc(850 - cam.x, 775 - cam.y, 26, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#e8e0cc';
+    ctx.strokeStyle = '#e8e0cc';
+    ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.arc(850 - cam.x, 775 - cam.y, 32, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.lineWidth = 5;
-    ctx.stroke();
+  }
+
+  function drawGround(world, cam) {
+    drawGrass(cam);
+    drawWater(world, cam);
+    drawRoads(cam);
+    drawParkAndPlaza(cam);
   }
 
   function drawBuildings(world, cam) {

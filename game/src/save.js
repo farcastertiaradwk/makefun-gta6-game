@@ -2,6 +2,18 @@
 // stats. The Safehouse and every completed mission write it; Continue reads it.
 const SAVE_KEY = 'solmar-heat-save-v1';
 
+function readSave() {
+  try {
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (typeof data.missionIndex !== 'number') return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export function saveGame(world) {
   try {
     const data = {
@@ -19,19 +31,11 @@ export function saveGame(world) {
 }
 
 export function loadGame() {
-  try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (typeof data.missionIndex !== 'number') return null;
-    return data;
-  } catch {
-    return null;
-  }
+  return readSave();
 }
 
 export function hasSave() {
-  return loadGame() !== null;
+  return readSave() !== null;
 }
 
 export function clearSave() {

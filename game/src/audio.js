@@ -11,24 +11,8 @@ export function createAudio() {
   let musicTimer = null;
   let musicStep = 0;
 
-  function ensure() {
-    if (ctx) {
-      if (ctx.state === 'suspended') ctx.resume();
-      return true;
-    }
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return false;
-      ctx = new AC();
-      master = ctx.createGain();
-      master.gain.value = 0.5;
-      master.connect(ctx.destination);
-      startMusic();
-      return true;
-    } catch {
-      return false;
-    }
-  }
+  // A lazy bassline: A minor, one bar of eight steps, looped.
+  const BASSLINE = [55, 0, 55, 65.41, 0, 55, 49, 0];
 
   function noiseBuffer(seconds) {
     const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * seconds), ctx.sampleRate);
@@ -68,8 +52,6 @@ export function createAudio() {
     source.start();
   }
 
-  // A lazy bassline: A minor, one bar of eight steps, looped.
-  const BASSLINE = [55, 0, 55, 65.41, 0, 55, 49, 0];
   function startMusic() {
     if (musicTimer) return;
     musicTimer = window.setInterval(() => {
@@ -79,6 +61,25 @@ export function createAudio() {
       if (freq) blip(freq, 0.22, 'triangle', 0.10);
       if (musicStep % 2 === 0) noiseBurst(0.03, 0.02, 6000);
     }, 240);
+  }
+
+  function ensure() {
+    if (ctx) {
+      if (ctx.state === 'suspended') ctx.resume();
+      return true;
+    }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.5;
+      master.connect(ctx.destination);
+      startMusic();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function setEngine(speed01) {
@@ -127,6 +128,10 @@ export function createAudio() {
     }
   }
 
+  function playNotes(notes, gap, duration, type, volume) {
+    notes.forEach((f, i) => window.setTimeout(() => blip(f, duration, type, volume), i * gap));
+  }
+
   return {
     ensure,
     toggleMute() {
@@ -138,8 +143,8 @@ export function createAudio() {
     gunshot() { noiseBurst(0.12, 0.35, 1800); blip(180, 0.08, 'square', 0.12, 60); },
     explosion() { noiseBurst(0.7, 0.5, 500); blip(70, 0.5, 'sine', 0.4, 30); },
     pickup() { blip(660, 0.09, 'sine', 0.15); window.setTimeout(() => blip(990, 0.12, 'sine', 0.15), 80); },
-    mission() { [523, 659, 784, 1047].forEach((f, i) => window.setTimeout(() => blip(f, 0.18, 'triangle', 0.18), i * 110)); },
-    fail() { [392, 330, 262].forEach((f, i) => window.setTimeout(() => blip(f, 0.22, 'triangle', 0.15), i * 140)); },
+    mission() { playNotes([523, 659, 784, 1047], 110, 0.18, 'triangle', 0.18); },
+    fail() { playNotes([392, 330, 262], 140, 0.22, 'triangle', 0.15); },
     hit() { noiseBurst(0.06, 0.2, 900); },
     setEngine,
     setSiren,

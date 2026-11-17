@@ -1,9 +1,17 @@
-// SOLMAR HEAT — tuning, world size and palette. One place for every number the
-// rest of the game shares, so a balance pass touches one file.
-export const WORLD = { w: 2600, h: 1900 };
+// SOLMAR HEAT — every number the game shares, in one place.
+// The map, the movement, the heat, the money and the look. A balance pass
+// touches this file and nothing else.
+
+// The world advances in fixed steps of one sixtieth of a second.
 export const STEP = 1 / 60;
 
-// Roads: a grid of avenues and streets. Cars and traffic follow these lines.
+// ---------------------------------------------------------------------------
+// Solmar itself: a rectangle of streets with a beach and a harbour.
+// ---------------------------------------------------------------------------
+
+export const WORLD = { w: 2600, h: 1900 };
+
+// Six avenues north-south, five streets east-west.
 export const ROADS_X = [250, 650, 1050, 1450, 1850, 2250];
 export const ROADS_Y = [250, 600, 950, 1300, 1650];
 export const ROAD_W = 90;
@@ -11,8 +19,13 @@ export const ROAD_W = 90;
 // The beach runs along the south edge; the sea is the world's south wall.
 export const BEACH_Y = 1750;
 export const SEA_Y = 1840;
+
 // The harbour is the east edge between these y values.
 export const HARBOUR = { x: 2420, y0: 300, y1: 950 };
+
+// ---------------------------------------------------------------------------
+// Moving: on foot and behind the wheel.
+// ---------------------------------------------------------------------------
 
 export const PLAYER = {
   radius: 14,
@@ -42,11 +55,14 @@ export const TRAFFIC_SPEED = 95;
 export const PED_SPEED = 38;
 export const PED_FLEE_SPEED = 78;
 
+// ---------------------------------------------------------------------------
+// The law: heat, decay and what raises it.
+// ---------------------------------------------------------------------------
+
 export const WANTED = {
   decaySeconds: 15,
   decayRange: 380,
   maxStars: 5,
-  // Heat added by each crime.
   steal: 1,
   shoot: 1,
   killPed: 2,
@@ -65,6 +81,10 @@ export const POLICE = {
   spawnInterval: 2.2,
 };
 
+// ---------------------------------------------------------------------------
+// Money: what missions pay and what the shops charge.
+// ---------------------------------------------------------------------------
+
 export const ECONOMY = {
   startCash: 150,
   missionReward: [400, 600, 800, 900, 1500, 2500],
@@ -76,6 +96,10 @@ export const ECONOMY = {
   bustFine: 150,
   wastedFine: 100,
 };
+
+// ---------------------------------------------------------------------------
+// The look of the city.
+// ---------------------------------------------------------------------------
 
 export const PALETTE = {
   grass: '#7fae5a',
@@ -98,7 +122,10 @@ export const PALETTE = {
   markerEnemy: '#ff4d4d',
 };
 
-// Fixed places in the city. Every mission and shop points at one of these.
+// ---------------------------------------------------------------------------
+// Fixed places: every mission and shop points at one of these.
+// ---------------------------------------------------------------------------
+
 export const PLACES = {
   safehouse: { x: 300, y: 1600, name: 'Sunset Safehouse' },
   gunshop: { x: 700, y: 300, name: 'Iron & Lead' },

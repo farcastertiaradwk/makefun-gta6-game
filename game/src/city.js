@@ -1,14 +1,14 @@
-// The city of Solmar: roads, blocks, buildings, parks, beach and harbour, all
-// generated once from a seed. Also the collision and road queries every other
-// system uses, so movement, traffic and the minimap agree about the map.
+// The city of Solmar: roads, blocks, buildings, parks, beach and harbour,
+// all generated once from a seed. This file also holds the collision and
+// road queries every other system uses, so movement, traffic and the minimap
+// all agree about the map.
 import { WORLD, ROADS_X, ROADS_Y, ROAD_W, BEACH_Y, SEA_Y, HARBOUR, PALETTE, PLACES } from './config.js';
 
-function blockRects() {
-  // Blocks are the cells between neighbouring roads.
-  const rects = [];
+// The blocks are the cells between neighbouring roads.
+function eachBlock(fn) {
   for (let i = 0; i < ROADS_X.length - 1; i += 1) {
     for (let j = 0; j < ROADS_Y.length - 1; j += 1) {
-      rects.push({
+      fn({
         x0: ROADS_X[i] + ROAD_W / 2 + 14,
         y0: ROADS_Y[j] + ROAD_W / 2 + 14,
         x1: ROADS_X[i + 1] - ROAD_W / 2 - 14,
@@ -16,13 +16,13 @@ function blockRects() {
       });
     }
   }
-  return rects;
 }
 
-function isParkBlock(b) {
+function blockIsPark(b) {
   return b.x0 > 1050 && b.x0 < 1450 && b.y0 > 950 && b.y0 < 1300;
 }
-function isPlazaBlock(b) {
+
+function blockIsPlaza(b) {
   return b.x0 > 650 && b.x0 < 1050 && b.y0 > 600 && b.y0 < 950;
 }
 
@@ -31,8 +31,9 @@ export function createCity(random) {
   const trees = [];
   const lamps = [];
   const parkedSpots = [];
-  for (const b of blockRects()) {
-    if (isParkBlock(b)) {
+
+  eachBlock((b) => {
+    if (blockIsPark(b)) {
       // Palm Park: trees in rows, a pond in the middle, paths crossing it.
       for (let i = 0; i < 14; i += 1) {
         trees.push({
@@ -41,9 +42,9 @@ export function createCity(random) {
           r: random.range(9, 14),
         });
       }
-      continue;
+      return;
     }
-    if (isPlazaBlock(b)) continue; // Solmar Plaza stays open.
+    if (blockIsPlaza(b)) return; // Solmar Plaza stays open.
     // One or two buildings per block, kept inside the block with a margin.
     const count = random.chance(0.45) ? 2 : 1;
     for (let k = 0; k < count; k += 1) {
@@ -58,7 +59,8 @@ export function createCity(random) {
         id: buildings.length,
       });
     }
-  }
+  });
+
   // Street lamps at every intersection corner.
   for (const x of ROADS_X) {
     for (const y of ROADS_Y) {
@@ -66,6 +68,7 @@ export function createCity(random) {
       lamps.push({ x: x + ROAD_W / 2 + 8, y: y + ROAD_W / 2 + 8 });
     }
   }
+
   // Parked cars along road edges, clear of intersections and shops.
   for (let i = 0; i < 16; i += 1) {
     const vertical = random.chance(0.5);
@@ -79,6 +82,7 @@ export function createCity(random) {
     if (Math.abs(spot.x - PLACES.gunshop.x) < 90 && Math.abs(spot.y - PLACES.gunshop.y) < 90) continue;
     parkedSpots.push(spot);
   }
+
   return { buildings, trees, lamps, parkedSpots };
 }
 

@@ -1,6 +1,6 @@
-// Pedestrians: they stroll the sidewalks, cross at intersections, and run from
-// gunfire, explosions and speeding cars. A pedestrian hit by a car is a crime;
-// one shot is a bigger one. They are what makes the city feel alive.
+// Pedestrians: they stroll the sidewalks, cross at intersections, and run
+// from gunfire, explosions and speeding cars. A pedestrian hit by a car is a
+// crime; one shot is a bigger one. They are what makes the city feel alive.
 import { PED_SPEED, PED_FLEE_SPEED, WORLD, BEACH_Y } from './config.js';
 import { moveCircle, nearestRoad, onRoad } from './city.js';
 
@@ -52,22 +52,26 @@ function pickSidewalkTarget(ped, random) {
   };
 }
 
+// What scares a pedestrian right now, if anything: a shot or a blast nearby.
+function nearbyDanger(world, ped) {
+  if (world.lastShotAt && world.time - world.lastShotAt < 0.8) {
+    const d = Math.hypot(ped.x - world.lastShotX, ped.y - world.lastShotY);
+    if (d < 260) return { x: world.lastShotX, y: world.lastShotY };
+  }
+  if (world.lastExplosionAt && world.time - world.lastExplosionAt < 1.2) {
+    const d = Math.hypot(ped.x - world.lastExplosionX, ped.y - world.lastExplosionY);
+    if (d < 320) return { x: world.lastExplosionX, y: world.lastExplosionY };
+  }
+  return null;
+}
+
 export function updatePeds(world, dt) {
   for (const ped of world.peds) {
     if (ped.state === 'down') {
       ped.downTimer -= dt;
       continue;
     }
-    // Danger nearby: gunfire, an explosion, or a fast car heading at them.
-    let danger = null;
-    if (world.lastShotAt && world.time - world.lastShotAt < 0.8) {
-      const d = Math.hypot(ped.x - world.lastShotX, ped.y - world.lastShotY);
-      if (d < 260) danger = { x: world.lastShotX, y: world.lastShotY };
-    }
-    if (world.lastExplosionAt && world.time - world.lastExplosionAt < 1.2) {
-      const d = Math.hypot(ped.x - world.lastExplosionX, ped.y - world.lastExplosionY);
-      if (d < 320) danger = { x: world.lastExplosionX, y: world.lastExplosionY };
-    }
+    const danger = nearbyDanger(world, ped);
     if (danger) {
       ped.state = 'flee';
       ped.fleeAngle = Math.atan2(ped.y - danger.y, ped.x - danger.x);

@@ -1,6 +1,6 @@
-// The player on foot: WASD movement with sprint, mouse aim, pistol fire with a
-// magazine and reload, and getting in and out of cars. Driving itself lives in
-// vehicles.js; this file only walks, shoots and steals.
+// The player on foot: WASD movement with sprint, mouse aim, pistol fire with
+// a magazine and reload, and getting in and out of cars. Driving itself lives
+// in vehicles.js; this file only walks, shoots and steals.
 import { PLAYER } from './config.js';
 import { isBlocked, moveCircle } from './city.js';
 
@@ -21,6 +21,7 @@ export function createPlayer(x, y) {
   };
 }
 
+// Armour soaks three fifths of a hit before health takes the rest.
 export function hurtPlayer(player, damage) {
   let left = damage;
   if (player.armor > 0) {
@@ -30,6 +31,35 @@ export function hurtPlayer(player, damage) {
   }
   player.health -= left;
   if (player.health < 0) player.health = 0;
+}
+
+function finishReload(player) {
+  const need = PLAYER.magazine - player.magazine;
+  const take = Math.min(need, player.reserve);
+  player.magazine += take;
+  player.reserve -= take;
+}
+
+function firePistol(world, player) {
+  player.magazine -= 1;
+  player.fireCooldown = PLAYER.fireInterval;
+  const spread = (world.random.next() - 0.5) * 0.08;
+  const a = player.angle + spread;
+  world.bullets.push({
+    x: player.x + Math.cos(a) * 20,
+    y: player.y + Math.sin(a) * 20,
+    vx: Math.cos(a) * PLAYER.bulletSpeed,
+    vy: Math.sin(a) * PLAYER.bulletSpeed,
+    damage: PLAYER.pistolDamage,
+    from: 'player',
+    life: 0.9,
+  });
+  world.particles.push({
+    kind: 'muzzle', x: player.x + Math.cos(a) * 22, y: player.y + Math.sin(a) * 22,
+    vx: 0, vy: 0, life: 0.08, max: 0.08, size: 10,
+  });
+  world.audio.gunshot();
+  world.addHeat(0.12);
 }
 
 export function updatePlayerOnFoot(world, dt, input, aimWorld) {
@@ -50,37 +80,14 @@ export function updatePlayerOnFoot(world, dt, input, aimWorld) {
 
   if (player.reloading > 0) {
     player.reloading -= dt;
-    if (player.reloading <= 0) {
-      const need = PLAYER.magazine - player.magazine;
-      const take = Math.min(need, player.reserve);
-      player.magazine += take;
-      player.reserve -= take;
-    }
+    if (player.reloading <= 0) finishReload(player);
   }
   if (player.fireCooldown > 0) player.fireCooldown -= dt;
 
   // Hold mouse to fire, as long as the magazine is not empty.
   if (input.mouseDown && player.fireCooldown <= 0 && player.reloading <= 0) {
     if (player.magazine > 0) {
-      player.magazine -= 1;
-      player.fireCooldown = PLAYER.fireInterval;
-      const spread = (world.random.next() - 0.5) * 0.08;
-      const a = player.angle + spread;
-      world.bullets.push({
-        x: player.x + Math.cos(a) * 20,
-        y: player.y + Math.sin(a) * 20,
-        vx: Math.cos(a) * PLAYER.bulletSpeed,
-        vy: Math.sin(a) * PLAYER.bulletSpeed,
-        damage: PLAYER.pistolDamage,
-        from: 'player',
-        life: 0.9,
-      });
-      world.particles.push({
-        kind: 'muzzle', x: player.x + Math.cos(a) * 22, y: player.y + Math.sin(a) * 22,
-        vx: 0, vy: 0, life: 0.08, max: 0.08, size: 10,
-      });
-      world.audio.gunshot();
-      world.addHeat(0.12);
+      firePistol(world, player);
     } else if (player.reserve > 0) {
       player.reloading = PLAYER.reloadTime;
     }

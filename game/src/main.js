@@ -1,11 +1,12 @@
 // SOLMAR HEAT — boot, the one loop, screens and the wiring between systems.
-// The world advances in fixed 1/60 s steps; the renderer paints what is there.
-// Screens: title, play, paused, mission complete, mission failed, wasted,
-// busted, victory. ?shot=cover|street|heli|bank stages a screenshot scene
-// instead of running the loop, paints it twice and sets window.__shotReady.
+// The world advances in fixed 1/60 s steps; the renderer paints what is
+// there. Screens: title, play, paused, mission complete, mission failed,
+// wasted, busted, victory. ?shot=cover|street|heli|bank stages a screenshot
+// scene instead of running the loop, paints it twice and sets
+// window.__shotReady.
 //
-// The story: Danny Reyes, a wheelman out of work, does jobs for Mara Voss and
-// the Harbour Crew to take Solmar back from Kane and the Vipers.
+// The story: Danny Reyes, a wheelman out of work, does jobs for Mara Voss
+// and the Harbour Crew to take Solmar back from Kane and the Vipers.
 import { STEP, WORLD, ROADS_X, ROADS_Y, PLAYER, ECONOMY, PALETTE, PLACES, WANTED } from './config.js';
 import { createRandom } from './random.js';
 import { createCity, isBlocked } from './city.js';
@@ -138,13 +139,17 @@ function showScreen(name) {
   world.screen = name === null ? 'play' : name;
 }
 
+function resetPlayerToSafehouse() {
+  world.player = createPlayer(PLACES.safehouse.x, PLACES.safehouse.y);
+}
+
 function newGame() {
   clearSave();
   input.actions = 0;
   world.cash = ECONOMY.startCash;
   world.missionIndex = 0;
   world.stats = { carsStolen: 0, pedsHit: 0, copsDown: 0, missionsDone: 0 };
-  world.player = createPlayer(PLACES.safehouse.x, PLACES.safehouse.y);
+  resetPlayerToSafehouse();
   // Clear police and wrecks, keep the parked cars, bring the traffic back.
   world.cars = world.cars.filter((c) => c.kind === 'parked');
   spawnTrafficCars(world, 14);
@@ -165,7 +170,7 @@ function continueGame() {
   world.cash = save.cash;
   world.missionIndex = Math.min(save.missionIndex, MISSIONS.length - 1);
   world.stats = save.stats || world.stats;
-  world.player = createPlayer(PLACES.safehouse.x, PLACES.safehouse.y);
+  resetPlayerToSafehouse();
   world.player.armor = save.armor || 0;
   world.player.reserve = save.reserve || 48;
   world.setWanted(0);
@@ -177,7 +182,7 @@ function continueGame() {
 
 function respawn(fine) {
   world.cash = Math.max(0, world.cash - fine);
-  world.player = createPlayer(PLACES.safehouse.x, PLACES.safehouse.y);
+  resetPlayerToSafehouse();
   world.cops = [];
   world.setWanted(0);
   world.heli = null;
@@ -196,36 +201,44 @@ world.wasted = () => {
   showScreen('wasted');
 };
 
-document.getElementById('btn-new').addEventListener('click', newGame);
-if (continueBtn) continueBtn.addEventListener('click', continueGame);
-if (!hasSave() && continueBtn) continueBtn.classList.add('hidden');
-document.getElementById('btn-resume').addEventListener('click', () => showScreen(null));
-document.getElementById('btn-restart').addEventListener('click', () => { newGame(); });
-document.getElementById('btn-quit').addEventListener('click', () => { saveGame(world); showScreen('title'); });
-document.getElementById('btn-next-mission').addEventListener('click', () => {
-  world.missionIndex += 1;
-  if (world.missionIndex >= MISSIONS.length) {
-    victoryStats.textContent = `Missions ${world.stats.missionsDone}/6 · Cars stolen ${world.stats.carsStolen} · Cops down ${world.stats.copsDown} · Cash $${world.cash}`;
-    showScreen('victory');
-  } else {
+function wireButtons() {
+  const on = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', fn);
+  };
+  on('btn-new', newGame);
+  on('btn-continue', continueGame);
+  on('btn-resume', () => showScreen(null));
+  on('btn-restart', () => { newGame(); });
+  on('btn-quit', () => { saveGame(world); showScreen('title'); });
+  on('btn-next-mission', () => {
+    world.missionIndex += 1;
+    if (world.missionIndex >= MISSIONS.length) {
+      victoryStats.textContent = `Missions ${world.stats.missionsDone}/6 · Cars stolen ${world.stats.carsStolen} · Cops down ${world.stats.copsDown} · Cash $${world.cash}`;
+      showScreen('victory');
+    } else {
+      startMission(world, world.missionIndex);
+      showScreen(null);
+      world.showMessage(MISSIONS[world.missionIndex].briefing, 6);
+    }
+  });
+  on('btn-retry', () => {
     startMission(world, world.missionIndex);
     showScreen(null);
-    world.showMessage(MISSIONS[world.missionIndex].briefing, 6);
-  }
-});
-document.getElementById('btn-retry').addEventListener('click', () => {
-  startMission(world, world.missionIndex);
-  showScreen(null);
-});
-document.getElementById('btn-respawn').addEventListener('click', () => respawn(ECONOMY.wastedFine));
-document.getElementById('btn-respawn-busted').addEventListener('click', () => respawn(ECONOMY.bustFine));
-document.getElementById('btn-freeroam').addEventListener('click', () => {
-  world.mission = null;
-  world.setWanted(0);
-  showScreen(null);
-  world.showMessage('Free roam. Solmar is yours — the story is done, the city is not.', 5);
-});
-document.getElementById('btn-victory-restart').addEventListener('click', () => newGame());
+  });
+  on('btn-respawn', () => respawn(ECONOMY.wastedFine));
+  on('btn-respawn-busted', () => respawn(ECONOMY.bustFine));
+  on('btn-freeroam', () => {
+    world.mission = null;
+    world.setWanted(0);
+    showScreen(null);
+    world.showMessage('Free roam. Solmar is yours — the story is done, the city is not.', 5);
+  });
+  on('btn-victory-restart', () => newGame());
+}
+
+wireButtons();
+if (!hasSave() && continueBtn) continueBtn.classList.add('hidden');
 
 // ---- bullets, pickups, shops ----
 function enemyDown(e) {
@@ -240,6 +253,55 @@ function enemyDown(e) {
   world.audio.pickup();
 }
 
+function bulletHitsPlayerBullet(b, world) {
+  // A player bullet: pedestrians, then cops, then rivals, then cars.
+  if (checkBulletHitPed(world, b)) return true;
+  for (const cop of world.cops) {
+    if (Math.hypot(cop.x - b.x, cop.y - b.y) < 16) {
+      cop.health -= b.damage;
+      world.audio.hit();
+      return true;
+    }
+  }
+  for (const e of world.enemies) {
+    if (e.health > 0 && Math.hypot(e.x - b.x, e.y - b.y) < 16) {
+      e.health -= b.damage;
+      world.audio.hit();
+      if (e.health <= 0) enemyDown(e);
+      return true;
+    }
+  }
+  for (const car of world.cars) {
+    if (car.wrecked) continue;
+    if (Math.hypot(car.x - b.x, car.y - b.y) < 24) {
+      car.health -= b.damage;
+      if (car.health <= 0) wreckCar(world, car);
+      return true;
+    }
+  }
+  return false;
+}
+
+function bulletHitsPlayer(b, world) {
+  const p = world.player;
+  if (p.inCar) {
+    const car = p.inCar;
+    if (Math.hypot(car.x - b.x, car.y - b.y) < 24) {
+      car.health -= b.damage;
+      if (car.health <= 0) wreckCar(world, car);
+      return true;
+    }
+    return false;
+  }
+  if (Math.hypot(p.x - b.x, p.y - b.y) < 14) {
+    hurtPlayer(p, b.damage);
+    world.audio.hit();
+    if (p.health <= 0) world.wasted();
+    return true;
+  }
+  return false;
+}
+
 function updateBullets(world, dt) {
   for (const b of world.bullets) {
     b.life -= dt;
@@ -252,74 +314,34 @@ function updateBullets(world, dt) {
       continue;
     }
     if (b.from === 'player') {
-      if (checkBulletHitPed(world, b)) { b.life = 0; continue; }
-      let hit = false;
-      for (const cop of world.cops) {
-        if (Math.hypot(cop.x - b.x, cop.y - b.y) < 16) {
-          cop.health -= b.damage;
-          world.audio.hit();
-          hit = true;
-          break;
-        }
-      }
-      if (hit) { b.life = 0; continue; }
-      for (const e of world.enemies) {
-        if (e.health > 0 && Math.hypot(e.x - b.x, e.y - b.y) < 16) {
-          e.health -= b.damage;
-          world.audio.hit();
-          if (e.health <= 0) enemyDown(e);
-          hit = true;
-          break;
-        }
-      }
-      if (hit) { b.life = 0; continue; }
-      for (const car of world.cars) {
-        if (car.wrecked) continue;
-        if (Math.hypot(car.x - b.x, car.y - b.y) < 24) {
-          car.health -= b.damage;
-          if (car.health <= 0) wreckCar(world, car);
-          hit = true;
-          break;
-        }
-      }
-      if (hit) b.life = 0;
-    } else {
-      const p = world.player;
-      if (p.inCar) {
-        const car = p.inCar;
-        if (Math.hypot(car.x - b.x, car.y - b.y) < 24) {
-          car.health -= b.damage;
-          if (car.health <= 0) wreckCar(world, car);
-          b.life = 0;
-        }
-      } else if (Math.hypot(p.x - b.x, p.y - b.y) < 14) {
-        hurtPlayer(p, b.damage);
-        world.audio.hit();
-        b.life = 0;
-        if (p.health <= 0) world.wasted();
-      }
+      if (bulletHitsPlayerBullet(b, world)) b.life = 0;
+    } else if (bulletHitsPlayer(b, world)) {
+      b.life = 0;
     }
   }
   world.bullets = world.bullets.filter((b) => b.life > 0);
+}
+
+function collectPickup(world, pk) {
+  const p = world.player;
+  pk.taken = true;
+  if (pk.kind === 'health') {
+    p.health = Math.min(PLAYER.health, p.health + 30);
+    world.floatText(pk.x, pk.y - 20, '+30 HEALTH', '#7dff8a');
+  } else if (pk.kind === 'ammo') {
+    p.reserve += 24;
+    world.floatText(pk.x, pk.y - 20, '+24 AMMO', '#ffd94d');
+  } else if (pk.kind === 'package') {
+    world.floatText(pk.x, pk.y - 20, 'PACKAGE SECURED', '#ffd94d');
+  }
+  world.audio.pickup();
 }
 
 function updatePickups(world) {
   const p = world.player;
   for (const pk of world.pickups) {
     if (pk.taken) continue;
-    if (Math.hypot(pk.x - p.x, pk.y - p.y) < 32) {
-      pk.taken = true;
-      if (pk.kind === 'health') {
-        p.health = Math.min(PLAYER.health, p.health + 30);
-        world.floatText(pk.x, pk.y - 20, '+30 HEALTH', '#7dff8a');
-      } else if (pk.kind === 'ammo') {
-        p.reserve += 24;
-        world.floatText(pk.x, pk.y - 20, '+24 AMMO', '#ffd94d');
-      } else if (pk.kind === 'package') {
-        world.floatText(pk.x, pk.y - 20, 'PACKAGE SECURED', '#ffd94d');
-      }
-      world.audio.pickup();
-    }
+    if (Math.hypot(pk.x - p.x, pk.y - p.y) < 32) collectPickup(world, pk);
   }
 }
 
@@ -332,39 +354,77 @@ function nearestShop(world) {
   return null;
 }
 
-function shopAction(world, key) {
+function buyAmmo(world) {
   const p = world.player;
-  if (key === 'gunshop') {
-    if (world.cash < ECONOMY.ammoPrice) { world.showMessage('Not enough cash for ammo.', 2); return; }
-    if (p.reserve >= 240) { world.showMessage('Ammo full.', 2); return; }
-    world.cash -= ECONOMY.ammoPrice;
-    p.reserve += ECONOMY.ammoAmount;
-    world.showMessage(`Bought ${ECONOMY.ammoAmount} rounds.`, 2);
+  if (world.cash < ECONOMY.ammoPrice) { world.showMessage('Not enough cash for ammo.', 2); return; }
+  if (p.reserve >= 240) { world.showMessage('Ammo full.', 2); return; }
+  world.cash -= ECONOMY.ammoPrice;
+  p.reserve += ECONOMY.ammoAmount;
+  world.showMessage(`Bought ${ECONOMY.ammoAmount} rounds.`, 2);
+  world.audio.pickup();
+}
+
+function useGarage(world) {
+  const p = world.player;
+  if (p.inCar && p.inCar.health < 100 && world.cash >= ECONOMY.repairPrice) {
+    world.cash -= ECONOMY.repairPrice;
+    p.inCar.health = 100;
+    p.inCar.wrecked = false;
+    world.showMessage('Car repaired.', 2);
     world.audio.pickup();
-  } else if (key === 'garage') {
-    if (p.inCar && p.inCar.health < 100 && world.cash >= ECONOMY.repairPrice) {
-      world.cash -= ECONOMY.repairPrice;
-      p.inCar.health = 100;
-      p.inCar.wrecked = false;
-      world.showMessage('Car repaired.', 2);
-      world.audio.pickup();
-    } else if (world.wanted > 0 && world.cash >= ECONOMY.layLowPerStar * world.wanted) {
-      world.cash -= ECONOMY.layLowPerStar * world.wanted;
-      world.setWanted(0);
-      world.showMessage('Lay low. The heat is off — for now.', 3);
-      world.audio.pickup();
-    } else if (world.wanted > 0) {
-      world.showMessage(`Lay low costs $${ECONOMY.layLowPerStar * world.wanted}.`, 2);
-    } else if (p.inCar) {
-      world.showMessage('Car is already in good shape.', 2);
-    } else {
-      world.showMessage('Bring a car here to repair it.', 2);
-    }
-  } else if (key === 'safehouse') {
-    p.health = PLAYER.health;
+  } else if (world.wanted > 0 && world.cash >= ECONOMY.layLowPerStar * world.wanted) {
+    world.cash -= ECONOMY.layLowPerStar * world.wanted;
+    world.setWanted(0);
+    world.showMessage('Lay low. The heat is off — for now.', 3);
+    world.audio.pickup();
+  } else if (world.wanted > 0) {
+    world.showMessage(`Lay low costs $${ECONOMY.layLowPerStar * world.wanted}.`, 2);
+  } else if (p.inCar) {
+    world.showMessage('Car is already in good shape.', 2);
+  } else {
+    world.showMessage('Bring a car here to repair it.', 2);
+  }
+}
+
+function useSafehouse(world) {
+  const p = world.player;
+  p.health = PLAYER.health;
+  saveGame(world);
+  world.showMessage('Healed up. Progress saved.', 3);
+  world.audio.pickup();
+}
+
+function shopAction(world, key) {
+  if (key === 'gunshop') buyAmmo(world);
+  else if (key === 'garage') useGarage(world);
+  else if (key === 'safehouse') useSafehouse(world);
+}
+
+function refreshPrompt(world) {
+  const player = world.player;
+  const shop = nearestShop(world);
+  if (shop === 'gunshop') world.prompt = 'E — Buy ammo $60';
+  else if (shop === 'garage') world.prompt = player.inCar ? 'E — Repair $80 / Lay low' : 'E — Lay low (clear wanted)';
+  else if (shop === 'safehouse') world.prompt = 'E — Heal & save';
+  else if (!player.inCar && nearestStealableCar(world, 60)) world.prompt = 'E — Steal car';
+  else world.prompt = '';
+}
+
+function finishMission(world) {
+  const m = world.mission;
+  if (!m) return;
+  if (m.status === 'complete') {
+    world.cash += MISSIONS[m.index].reward;
+    world.stats.missionsDone += 1;
     saveGame(world);
-    world.showMessage('Healed up. Progress saved.', 3);
-    world.audio.pickup();
+    world.audio.mission();
+    missionTitle.textContent = `MISSION COMPLETE — ${MISSIONS[m.index].name}`;
+    missionText.textContent = `${m.reason} Reward: $${MISSIONS[m.index].reward}.`;
+    showScreen('mission');
+  } else if (m.status === 'failed') {
+    world.audio.fail();
+    failedText.textContent = `${MISSIONS[m.index].name}: ${m.reason}`;
+    showScreen('failed');
   }
 }
 
@@ -412,37 +472,21 @@ function stepWorld(dt, input) {
   updateParticles(world, dt);
   updateMission(world, dt);
 
-  // Shop prompt.
-  const shop = nearestShop(world);
-  if (shop === 'gunshop') world.prompt = 'E — Buy ammo $60';
-  else if (shop === 'garage') world.prompt = player.inCar ? 'E — Repair $80 / Lay low' : 'E — Lay low (clear wanted)';
-  else if (shop === 'safehouse') world.prompt = 'E — Heal & save';
-  else if (!player.inCar && nearestStealableCar(world, 60)) world.prompt = 'E — Steal car';
-  else world.prompt = '';
-
+  refreshPrompt(world);
   if (world.camera.shake > 0) world.camera.shake = Math.max(0, world.camera.shake - dt * 30);
   if (player.health <= 0 && world.screen === 'play') world.wasted();
 
-  // Mission end.
-  const m = world.mission;
-  if (m && m.status === 'complete') {
-    world.cash += MISSIONS[m.index].reward;
-    world.stats.missionsDone += 1;
-    saveGame(world);
-    world.audio.mission();
-    missionTitle.textContent = `MISSION COMPLETE — ${MISSIONS[m.index].name}`;
-    missionText.textContent = `${m.reason} Reward: $${MISSIONS[m.index].reward}.`;
-    showScreen('mission');
-  } else if (m && m.status === 'failed') {
-    world.audio.fail();
-    failedText.textContent = `${MISSIONS[m.index].name}: ${m.reason}`;
-    showScreen('failed');
-  }
+  finishMission(world);
 }
 
 // ---- the loop ----
 let accumulator = 0;
 let last = performance.now();
+
+function titleInput() {
+  // On the title screen the city lives on its own: no player input.
+  return { axis: () => ({ x: 0, y: 0 }), held: () => false, shift: () => false, mouseDown: false, mouseX: 0, mouseY: 0, takeActions: () => 0 };
+}
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -464,10 +508,7 @@ function frame(now) {
   last = now;
   if (world.screen === 'play' || world.screen === 'title') {
     while (accumulator >= STEP && (world.screen === 'play' || world.screen === 'title')) {
-      // On the title screen the city lives on its own: no player input.
-      const stepInput = world.screen === 'title'
-        ? { axis: () => ({ x: 0, y: 0 }), held: () => false, shift: () => false, mouseDown: false, mouseX: 0, mouseY: 0, takeActions: () => 0 }
-        : input;
+      const stepInput = world.screen === 'title' ? titleInput() : input;
       stepWorld(STEP, stepInput);
       accumulator -= STEP;
     }
