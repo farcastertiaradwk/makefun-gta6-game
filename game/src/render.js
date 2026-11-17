@@ -20,7 +20,7 @@ export function createRenderer(canvas) {
   window.addEventListener('resize', resize);
   resize();
 
-  function frameCamera(world) {
+  function cameraFor(world) {
     const cam = world.camera;
     const px = world.player.x;
     const py = world.player.y;
@@ -35,11 +35,11 @@ export function createRenderer(canvas) {
     return { x: cx, y: cy };
   }
 
-  function onScreen(x, y, margin) {
+  function visible(x, y, margin) {
     return x >= -margin && x <= viewW + margin && y >= -margin && y <= viewH + margin;
   }
 
-  function paintLawn(cam) {
+  function drawGrass(cam) {
     ctx.fillStyle = PALETTE.grass;
     ctx.fillRect(0, 0, viewW, viewH);
     // Mow stripes for a little texture.
@@ -54,7 +54,7 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintWater(world, cam) {
+  function drawSea(world, cam) {
     // Beach, then sea with wave lines.
     if (BEACH_Y - cam.y < viewH && SEA_Y - cam.y > 0) {
       ctx.fillStyle = PALETTE.sand;
@@ -85,7 +85,7 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintStreets(cam) {
+  function drawRoads(cam) {
     // Roads with sidewalks, centre dashes and crosswalks.
     ctx.fillStyle = PALETTE.sidewalk;
     for (const rx of ROADS_X) ctx.fillRect(rx - ROAD_W / 2 - 10 - cam.x, -cam.y, ROAD_W + 20, WORLD.h);
@@ -116,7 +116,7 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintParkPlaza(cam) {
+  function drawParkAndPlaza(cam) {
     // Palm Park: paths and a pond.
     ctx.fillStyle = '#5d8a48';
     ctx.fillRect(1100 - cam.x, 1000 - cam.y, 300, 250);
@@ -141,17 +141,17 @@ export function createRenderer(canvas) {
     ctx.stroke();
   }
 
-  function paintGround(world, cam) {
-    paintLawn(cam);
-    paintWater(world, cam);
-    paintStreets(cam);
-    paintParkPlaza(cam);
+  function drawGround(world, cam) {
+    drawGrass(cam);
+    drawSea(world, cam);
+    drawRoads(cam);
+    drawParkAndPlaza(cam);
   }
 
-  function paintTree(cam, t) {
+  function drawPalm(cam, t) {
     const tx = t.x - cam.x;
     const ty = t.y - cam.y;
-    if (!onScreen(tx, ty, 20)) return;
+    if (!visible(tx, ty, 20)) return;
     ctx.fillStyle = '#6b4a2a';
     ctx.fillRect(tx - 2, ty - 2, 4, 8);
     ctx.fillStyle = '#3f7d3a';
@@ -164,7 +164,7 @@ export function createRenderer(canvas) {
     ctx.fill();
   }
 
-  function paintBuildings(world, cam) {
+  function drawCity(world, cam) {
     for (const b of world.city.buildings) {
       const bx = b.x - cam.x;
       const by = b.y - cam.y;
@@ -184,7 +184,7 @@ export function createRenderer(canvas) {
       ctx.fillRect(bx + 10, by + 10, 18, 12);
       ctx.fillRect(bx + b.w - 30, by + b.h - 22, 20, 12);
     }
-    for (const t of world.city.trees) paintTree(cam, t);
+    for (const t of world.city.trees) drawPalm(cam, t);
     // Street lamps.
     ctx.fillStyle = '#2f333a';
     for (const l of world.city.lamps) {
@@ -195,10 +195,10 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintOnePickup(world, cam, p) {
+  function drawPickup(world, cam, p) {
     const px = p.x - cam.x;
     const py = p.y - cam.y;
-    if (!onScreen(px, py, 20)) return;
+    if (!visible(px, py, 20)) return;
     const bob = Math.sin(world.time * 3 + p.x) * 3;
     if (p.kind === 'package') {
       ctx.fillStyle = '#8a5a2b';
@@ -220,13 +220,13 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintPickups(world, cam) {
+  function drawPickups(world, cam) {
     for (const p of world.pickups) {
-      if (!p.taken) paintOnePickup(world, cam, p);
+      if (!p.taken) drawPickup(world, cam, p);
     }
   }
 
-  function paintCarBody(world, car) {
+  function drawCarShape(world, car) {
     // Shadow.
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(-22, -8, 46, 24);
@@ -262,15 +262,15 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintCar(world, cam, car) {
+  function drawCar(world, cam, car) {
     const cx = car.x - cam.x;
     const cy = car.y - cam.y;
-    if (!onScreen(cx, cy, 60)) return;
+    if (!visible(cx, cy, 60)) return;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(car.angle);
     if (car.wrecked) ctx.globalAlpha = 0.75;
-    paintCarBody(world, car);
+    drawCarShape(world, car);
     ctx.restore();
     if (car.wrecked) {
       ctx.fillStyle = 'rgba(60,60,60,0.5)';
@@ -280,10 +280,10 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintWalker(world, cam, x, y, angle, shirt, label, down, ring) {
+  function drawPerson(world, cam, x, y, angle, shirt, label, down, ring) {
     const px = x - cam.x;
     const py = y - cam.y;
-    if (!onScreen(px, py, 30)) return;
+    if (!visible(px, py, 30)) return;
     ctx.save();
     ctx.translate(px, py);
     if (down) {
@@ -328,7 +328,7 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintOffscreenArrow(cam, mx, my, label) {
+  function drawEdgeArrow(cam, mx, my, label) {
     // Off-screen: an arrow at the screen edge points the way.
     const ex = Math.max(30, Math.min(viewW - 30, mx));
     const ey = Math.max(30, Math.min(viewH - 30, my));
@@ -350,7 +350,7 @@ export function createRenderer(canvas) {
     ctx.fillText(label, ex, ey - 16);
   }
 
-  function paintMarker(world, cam) {
+  function drawMarker(world, cam) {
     const m = world.mission && world.mission.marker;
     if (!m) return;
     const mx = m.x - cam.x;
@@ -374,14 +374,14 @@ export function createRenderer(canvas) {
       ctx.textAlign = 'center';
       ctx.fillText(m.label, mx, my + bob - 44);
     } else {
-      paintOffscreenArrow(cam, mx, my, m.label);
+      drawEdgeArrow(cam, mx, my, m.label);
     }
   }
 
-  function paintOneParticle(cam, p) {
+  function drawParticle(cam, p) {
     const px = p.x - cam.x;
     const py = p.y - cam.y;
-    if (!onScreen(px, py, 30)) return;
+    if (!visible(px, py, 30)) return;
     const alpha = Math.max(0, p.life / p.max);
     if (p.kind === 'smoke') {
       ctx.fillStyle = `rgba(90,90,90,${0.5 * alpha})`;
@@ -404,8 +404,8 @@ export function createRenderer(canvas) {
     }
   }
 
-  function paintParticles(world, cam) {
-    for (const p of world.particles) paintOneParticle(cam, p);
+  function drawParticles(world, cam) {
+    for (const p of world.particles) drawParticle(cam, p);
     // Bullets as short tracers.
     ctx.strokeStyle = '#ffe95a';
     ctx.lineWidth = 2;
@@ -428,7 +428,7 @@ export function createRenderer(canvas) {
     ctx.globalAlpha = 1;
   }
 
-  function paintHeli(world, cam) {
+  function drawHeli(world, cam) {
     const heli = world.heli;
     if (!heli || heli.x === undefined) return;
     const hx = heli.x - cam.x;
@@ -461,14 +461,14 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  function paintShopSigns(world, cam) {
+  function drawShopNames(world, cam) {
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     for (const key of ['gunshop', 'garage', 'safehouse', 'bank']) {
       const p = PLACES[key];
       const px = p.x - cam.x;
       const py = p.y - cam.y;
-      if (!onScreen(px, py, 60)) continue;
+      if (!visible(px, py, 60)) continue;
       ctx.fillStyle = 'rgba(20,24,32,0.85)';
       ctx.fillRect(px - 52, py - 34, 104, 20);
       ctx.fillStyle = '#ffd94d';
@@ -476,35 +476,35 @@ export function createRenderer(canvas) {
     }
   }
 
-  function queueDrawables(world, cam) {
+  function sortedDrawables(world, cam) {
     // People and cars, sorted by y so nearer ones overlap farther ones.
     const items = [];
     for (const car of world.cars) {
-      items.push({ y: car.y, fn: () => paintCar(world, cam, car) });
+      items.push({ y: car.y, fn: () => drawCar(world, cam, car) });
     }
     for (const ped of world.peds) {
       items.push({
         y: ped.y,
-        fn: () => paintWalker(world, cam, ped.x, ped.y, ped.angle, ped.shirt, null, ped.state === 'down'),
+        fn: () => drawPerson(world, cam, ped.x, ped.y, ped.angle, ped.shirt, null, ped.state === 'down'),
       });
     }
     for (const cop of world.cops) {
       items.push({
         y: cop.y,
-        fn: () => paintWalker(world, cam, cop.x, cop.y, cop.angle, '#2e5fa3', null, false),
+        fn: () => drawPerson(world, cam, cop.x, cop.y, cop.angle, '#2e5fa3', null, false),
       });
     }
     for (const e of world.enemies) {
       items.push({
         y: e.y,
-        fn: () => paintWalker(world, cam, e.x, e.y, e.angle, e.boss ? '#7a1f1f' : '#5b2d8e', e.health > 0 ? e.name : null, e.health <= 0),
+        fn: () => drawPerson(world, cam, e.x, e.y, e.angle, e.boss ? '#7a1f1f' : '#5b2d8e', e.health > 0 ? e.name : null, e.health <= 0),
       });
     }
     items.push({
       y: world.player.y,
       fn: () => {
         if (!world.player.inCar) {
-          paintWalker(world, cam, world.player.x, world.player.y, world.player.angle, PALETTE.playerShirt, null, false, true);
+          drawPerson(world, cam, world.player.x, world.player.y, world.player.angle, PALETTE.playerShirt, null, false, true);
         }
       },
     });
@@ -513,15 +513,15 @@ export function createRenderer(canvas) {
   }
 
   function draw(world, screen) {
-    const cam = frameCamera(world);
-    paintGround(world, cam);
-    paintBuildings(world, cam);
-    paintShopSigns(world, cam);
-    paintPickups(world, cam);
-    paintMarker(world, cam);
-    for (const d of queueDrawables(world, cam)) d.fn();
-    paintParticles(world, cam);
-    paintHeli(world, cam);
+    const cam = cameraFor(world);
+    drawGround(world, cam);
+    drawCity(world, cam);
+    drawShopNames(world, cam);
+    drawPickups(world, cam);
+    drawMarker(world, cam);
+    for (const d of sortedDrawables(world, cam)) d.fn();
+    drawParticles(world, cam);
+    drawHeli(world, cam);
     return { viewW, viewH };
   }
 

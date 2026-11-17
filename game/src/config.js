@@ -1,26 +1,21 @@
-// SOLMAR HEAT — the shared numbers. One place holds the map, the movement,
-// the heat, the money and the look, so a balance pass edits here and nowhere
-// else. Values are the game's identity: change one and the playtest notices.
+// SOLMAR HEAT — the numbers that define the game. Everything tunable
+// lives in this one module: the map, the movement, the heat, the money,
+// the look. The rest of the code reads these and never hard-codes a value,
+// so one edit here rebalances the whole game.
 
-// A fixed heartbeat: the world steps sixty times a second.
 export const STEP = 1 / 60;
 
-// --- Solmar's shape: streets, a beach on the south edge, a harbour east. ---
+// The island: 2,600 wide, 1,900 tall. The sea is the southern wall, the
+// harbour water hugs the eastern edge.
 export const WORLD = { w: 2600, h: 1900 };
-
-// Six north-south avenues, five east-west streets, all 90 px wide.
 export const ROADS_X = [250, 650, 1050, 1450, 1850, 2250];
 export const ROADS_Y = [250, 600, 950, 1300, 1650];
 export const ROAD_W = 90;
-
-// Sand starts here; the sea is the world's southern wall.
 export const BEACH_Y = 1750;
 export const SEA_Y = 1840;
-
-// Harbour water hugs the east edge between these two heights.
 export const HARBOUR = { x: 2420, y0: 300, y1: 950 };
 
-// --- Moving around: on foot, and behind the wheel. ---
+// On foot: walk, sprint, and the pistol Danny carries.
 export const PLAYER = {
   radius: 14,
   walkSpeed: 170,
@@ -33,6 +28,7 @@ export const PLAYER = {
   bulletSpeed: 720,
 };
 
+// Behind the wheel: arcade handling, top speed 430.
 export const CAR = {
   length: 46,
   width: 22,
@@ -49,7 +45,7 @@ export const TRAFFIC_SPEED = 95;
 export const PED_SPEED = 38;
 export const PED_FLEE_SPEED = 78;
 
-// --- The law: how heat grows, and how it cools off. ---
+// Heat: how fast it grows per crime, and how it cools off.
 export const WANTED = {
   decaySeconds: 15,
   decayRange: 380,
@@ -62,6 +58,8 @@ export const WANTED = {
   hitCopCar: 1,
 };
 
+// The force: foot speed, shooting range and rhythm, pursuit speed,
+// how long a bust takes, how close a cop must stand, spawn pacing.
 export const POLICE = {
   footSpeed: 185,
   footShootRange: 260,
@@ -72,7 +70,7 @@ export const POLICE = {
   spawnInterval: 2.2,
 };
 
-// --- Money: mission pay and shop prices. ---
+// Cash: what Danny starts with, what each job pays, what the shops charge.
 export const ECONOMY = {
   startCash: 150,
   missionReward: [400, 600, 800, 900, 1500, 2500],
@@ -85,7 +83,7 @@ export const ECONOMY = {
   wastedFine: 100,
 };
 
-// --- The look: sun-soaked Solmar. ---
+// Sun-soaked Solmar: grass, sand, sea, asphalt, roofs, cars, the player.
 export const PALETTE = {
   grass: '#7fae5a',
   grassDark: '#6f9c4e',
@@ -97,9 +95,28 @@ export const PALETTE = {
   sidewalk: '#b9b3a4',
   plaza: '#cbb98f',
   parkPath: '#d8c49a',
-  buildingRoof: ['#c96f4a', '#d9a05b', '#7fa8a0', '#b06a8a', '#8a7fb8', '#e0c078', '#5b8a6a', '#c25b5b'],
+  buildingRoof: [
+    '#c96f4a',
+    '#d9a05b',
+    '#7fa8a0',
+    '#b06a8a',
+    '#8a7fb8',
+    '#e0c078',
+    '#5b8a6a',
+    '#c25b5b',
+  ],
   buildingWall: '#8a7a66',
-  carColors: ['#c0392b', '#2980b9', '#f1c40f', '#ecf0f1', '#2c3e50', '#e67e22', '#8e44ad', '#16a085', '#d35400'],
+  carColors: [
+    '#c0392b',
+    '#2980b9',
+    '#f1c40f',
+    '#ecf0f1',
+    '#2c3e50',
+    '#e67e22',
+    '#8e44ad',
+    '#16a085',
+    '#d35400',
+  ],
   policeCar: '#2e5fa3',
   policeLight: ['#ff2d2d', '#2d6bff'],
   playerShirt: '#e74c3c',
@@ -107,7 +124,8 @@ export const PALETTE = {
   markerEnemy: '#ff4d4d',
 };
 
-// --- Named places: missions and shops all point at one of these. ---
+// Where everything happens: the safehouse, the shops, the bank, the docks,
+// the plaza, the lighthouse, the park.
 export const PLACES = {
   safehouse: { x: 300, y: 1600, name: 'Sunset Safehouse' },
   gunshop: { x: 700, y: 300, name: 'Iron & Lead' },

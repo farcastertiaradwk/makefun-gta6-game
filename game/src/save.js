@@ -1,6 +1,6 @@
 // Progress in localStorage: the mission reached, cash, armour, ammo and
 // lifetime stats. The Safehouse and every finished mission write it;
-// Continue reads it back.
+// Continue reads it back. A save that fails to parse is no save at all.
 const STORAGE_KEY = 'solmar-heat-save-v1';
 
 function parseSave() {

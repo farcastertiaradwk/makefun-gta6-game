@@ -21,7 +21,8 @@ export function createAudio() {
     return buffer;
   }
 
-  function tone(freq, duration, type, volume, slideTo) {
+  // One oscillator blip, optionally sliding down in pitch.
+  function blip(freq, duration, type, volume, slideTo) {
     if (!ctx || muted) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -36,7 +37,8 @@ export function createAudio() {
     osc.stop(ctx.currentTime + duration);
   }
 
-  function burst(duration, volume, filterFreq) {
+  // One burst of filtered noise.
+  function noiseHit(duration, volume, filterFreq) {
     if (!ctx || muted) return;
     const source = ctx.createBufferSource();
     source.buffer = makeNoise(duration);
@@ -52,14 +54,14 @@ export function createAudio() {
     source.start();
   }
 
-  function startBassline() {
+  function startMusic() {
     if (musicTimer) return;
     musicTimer = window.setInterval(() => {
       if (!ctx || muted) return;
       const freq = BASS_PATTERN[musicStep % BASS_PATTERN.length];
       musicStep += 1;
-      if (freq) tone(freq, 0.22, 'triangle', 0.10);
-      if (musicStep % 2 === 0) burst(0.03, 0.02, 6000);
+      if (freq) blip(freq, 0.22, 'triangle', 0.1);
+      if (musicStep % 2 === 0) noiseHit(0.03, 0.02, 6000);
     }, 240);
   }
 
@@ -75,7 +77,7 @@ export function createAudio() {
       master = ctx.createGain();
       master.gain.value = 0.5;
       master.connect(ctx.destination);
-      startBassline();
+      startMusic();
       return true;
     } catch {
       return false;
@@ -129,7 +131,7 @@ export function createAudio() {
   }
 
   function playNotes(notes, gap, duration, type, volume) {
-    notes.forEach((f, i) => window.setTimeout(() => tone(f, duration, type, volume), i * gap));
+    notes.forEach((f, i) => window.setTimeout(() => blip(f, duration, type, volume), i * gap));
   }
 
   return {
@@ -140,12 +142,12 @@ export function createAudio() {
       return muted;
     },
     get muted() { return muted; },
-    gunshot() { burst(0.12, 0.35, 1800); tone(180, 0.08, 'square', 0.12, 60); },
-    explosion() { burst(0.7, 0.5, 500); tone(70, 0.5, 'sine', 0.4, 30); },
-    pickup() { tone(660, 0.09, 'sine', 0.15); window.setTimeout(() => tone(990, 0.12, 'sine', 0.15), 80); },
+    gunshot() { noiseHit(0.12, 0.35, 1800); blip(180, 0.08, 'square', 0.12, 60); },
+    explosion() { noiseHit(0.7, 0.5, 500); blip(70, 0.5, 'sine', 0.4, 30); },
+    pickup() { blip(660, 0.09, 'sine', 0.15); window.setTimeout(() => blip(990, 0.12, 'sine', 0.15), 80); },
     mission() { playNotes([523, 659, 784, 1047], 110, 0.18, 'triangle', 0.18); },
     fail() { playNotes([392, 330, 262], 140, 0.22, 'triangle', 0.15); },
-    hit() { burst(0.06, 0.2, 900); },
+    hit() { noiseHit(0.06, 0.2, 900); },
     setEngine,
     setSiren,
   };

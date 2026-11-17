@@ -38,7 +38,7 @@ export function spawnPeds(world, count) {
   }
 }
 
-function chooseStrollTarget(ped, random) {
+function pickStrollPoint(ped, random) {
   // Walk to a random nearby point on a sidewalk, then re-pick there.
   const road = nearestRoad(ped.x, ped.y);
   if (road.axis === 'x') {
@@ -54,7 +54,7 @@ function chooseStrollTarget(ped, random) {
 }
 
 // What scares a pedestrian right now, if anything: a shot or a blast nearby.
-function threatNear(world, ped) {
+function scareNear(world, ped) {
   if (world.lastShotAt && world.time - world.lastShotAt < 0.8) {
     const d = Math.hypot(ped.x - world.lastShotX, ped.y - world.lastShotY);
     if (d < 260) return { x: world.lastShotX, y: world.lastShotY };
@@ -72,7 +72,7 @@ export function updatePeds(world, dt) {
       ped.downTimer -= dt;
       continue;
     }
-    const danger = threatNear(world, ped);
+    const danger = scareNear(world, ped);
     if (danger) {
       ped.state = 'flee';
       ped.fleeAngle = Math.atan2(ped.y - danger.y, ped.x - danger.x);
@@ -90,7 +90,7 @@ export function updatePeds(world, dt) {
       continue;
     }
     // Stroll: pick a sidewalk point, walk to it, pick another.
-    if (!ped.target) ped.target = chooseStrollTarget(ped, world.random);
+    if (!ped.target) ped.target = pickStrollPoint(ped, world.random);
     const dx = ped.target.x - ped.x;
     const dy = ped.target.y - ped.y;
     const dist = Math.hypot(dx, dy);

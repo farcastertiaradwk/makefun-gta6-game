@@ -1,5 +1,6 @@
 /* SOLMAR HEAT — the shell around the canvas: full-screen game, HUD in the
-   corners, a minimap, and menu screens over the living city. */
+   corners, a minimap, and menu screens over the living city. Kept deliberately
+   flat: no frameworks, no web fonts, nothing fetched over the network. */
 html, body {
   margin: 0;
   padding: 0;
@@ -165,3 +166,17 @@ body:not(.playing) #hud { display: none; }
   cursor: pointer;
 }
 .buttons button:hover { background: #ffd94d; color: #1c2333; }
+.buttons button:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* Small screens: shrink the title and the HUD so the game stays playable. */
+@media (max-width: 700px) {
+  .screen h1 { font-size: 40px; letter-spacing: 3px; }
+  .screen .story { font-size: 14px; }
+  #hud-stars { font-size: 20px; }
+  #hud-cash { font-size: 20px; }
+  .bar { width: 130px; }
+  #minimap { width: 160px; height: 116px; }
+}

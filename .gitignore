@@ -3,3 +3,6 @@ out/
 
 # Local run logs from the playtest driver and the static server.
 *.log
+
+# OS artefacts that never belong in the entry.
+.DS_Store

@@ -18,7 +18,7 @@ export function createCop(x, y) {
   };
 }
 
-function edgeSpawn(world) {
+function spawnOffscreen(world) {
   // Spawn just outside the camera's view, on a road near the player.
   const p = world.player;
   const angle = world.random.range(0, Math.PI * 2);
@@ -27,7 +27,7 @@ function edgeSpawn(world) {
   return { x, y };
 }
 
-function closestLawDistance(world) {
+function nearestLaw(world) {
   let best = Infinity;
   for (const cop of world.cops) {
     best = Math.min(best, Math.hypot(cop.x - world.player.x, cop.y - world.player.y));
@@ -39,12 +39,12 @@ function closestLawDistance(world) {
   return best;
 }
 
-function letHeatFade(world) {
+function coolHeat(world) {
   // Staying clean and out of sight cools the heat, one star at a time.
   const now = world.time;
   if (world.wanted > 0
     && now - world.lastCrimeAt > WANTED.decaySeconds
-    && closestLawDistance(world) > WANTED.decayRange) {
+    && nearestLaw(world) > WANTED.decayRange) {
     world.heat = Math.max(0, world.heat - 1);
     world.wanted = Math.floor(world.heat);
     world.lastCrimeAt = now;
@@ -52,7 +52,7 @@ function letHeatFade(world) {
   }
 }
 
-function manageHeli(world, dt) {
+function watchHeli(world, dt) {
   // A helicopter at 4 stars keeps the heat on: it never cools while it watches.
   if (world.wanted >= 4 && !world.heli) {
     world.heli = { angle: 0, radius: 150 };
@@ -65,7 +65,7 @@ function manageHeli(world, dt) {
   }
 }
 
-function reinforce(world, dt) {
+function sendBackup(world, dt) {
   // Keep the right number of cops on the street for the current heat.
   const wantCops = world.wanted >= 1 ? Math.min(2 + world.wanted, 7) : 0;
   const wantCars = world.wanted >= 2 ? Math.min(world.wanted - 1, 4) : 0;
@@ -73,12 +73,12 @@ function reinforce(world, dt) {
   if (world.spawnTimer > 0) return;
   world.spawnTimer = POLICE.spawnInterval;
   if (world.cops.length < wantCops) {
-    const at = edgeSpawn(world);
+    const at = spawnOffscreen(world);
     world.cops.push(createCop(at.x, at.y));
   }
   const policeCars = world.cars.filter((c) => c.kind === 'police' && !c.wrecked).length;
   if (policeCars < wantCars) {
-    const at = edgeSpawn(world);
+    const at = spawnOffscreen(world);
     const car = createCar(at.x, at.y, world.random.range(0, Math.PI * 2), '#2e5fa3', 'police');
     car.speed = 200;
     world.cars.push(car);
@@ -86,15 +86,15 @@ function reinforce(world, dt) {
 }
 
 export function updateWanted(world, dt) {
-  letHeatFade(world);
-  manageHeli(world, dt);
-  reinforce(world, dt);
+  coolHeat(world);
+  watchHeli(world, dt);
+  sendBackup(world, dt);
   // Sirens while any police is close.
-  const sirenOn = world.wanted > 0 && closestLawDistance(world) < 900;
+  const sirenOn = world.wanted > 0 && nearestLaw(world) < 900;
   world.audio.setSiren(sirenOn);
 }
 
-function copShoots(world, cop, dist, dt) {
+function copFires(world, cop, dist, dt) {
   // Shoot from 2 stars up, badly on purpose.
   if (world.wanted < 2 || dist >= POLICE.footShootRange || world.player.inCar) return;
   cop.shootCooldown -= dt;
@@ -135,7 +135,7 @@ export function updateCops(world, dt) {
     } else {
       cop.bustTimer = 0;
     }
-    copShoots(world, cop, dist, dt);
+    copFires(world, cop, dist, dt);
   }
   // A cop the player shoots goes down and the heat jumps.
   for (const cop of world.cops) {

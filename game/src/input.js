@@ -1,13 +1,17 @@
-// Keyboard and mouse. The world reads a plain state object every frame;
-// the menu screens read edge-triggered actions. The mouse lives in screen
-// space; the camera turns it into a world aim point when it needs one.
+// Keyboard and mouse, reduced to what the game needs: which keys are held
+// down, which action keys were tapped since the last frame, and where the
+// mouse points. Taps are edge-triggered — a tap is consumed exactly once —
+// and the frame loop, not the world, owns pause, mute and confirm, so the
+// world only ever sees interact and reload.
+
 export const ACTION_CONFIRM = 1;
 export const ACTION_PAUSE = 2;
 export const ACTION_MUTE = 4;
 export const ACTION_INTERACT = 8;
 export const ACTION_RELOAD = 16;
 
-// Which physical key raises which action bit.
+// Which physical key raises which action bit. Checked against event.key,
+// so shift-letter variants count too.
 const ACTION_KEYS = {
   Enter: ACTION_CONFIRM,
   ' ': ACTION_CONFIRM,
@@ -41,6 +45,7 @@ export function createInput(canvas) {
 
   state.held = (key) => down.has(key);
 
+  // Raw WASD/arrows vector, unnormalised — the player normalises it.
   state.axis = () => {
     let x = 0;
     let y = 0;

@@ -28,7 +28,7 @@ const AUTOSAVE_SECONDS = 20;
 
 // A bare world: data only. The verbs are attached by createGame, and the
 // stock (cars, walkers, pickups) by stockWorld.
-function freshWorld(seedValue) {
+function blankWorld(seedValue) {
   const random = createRandom(seedValue);
   const city = createCity(random);
   return {
@@ -69,7 +69,7 @@ function freshWorld(seedValue) {
   };
 }
 
-function stockWorld(world) {
+function fillWorld(world) {
   // Traffic first, then the parked cars at the kerb, then the walkers.
   spawnTrafficCars(world, 14);
   for (const spot of world.city.parkedSpots) {
@@ -89,9 +89,9 @@ function stockWorld(world) {
 
 export function createGame({ canvas, hud, audio, input, seed }) {
   const renderer = createRenderer(canvas);
-  const world = freshWorld(seed);
+  const world = blankWorld(seed);
   world.audio = audio;
-  stockWorld(world);
+  fillWorld(world);
   let accumulator = 0;
 
   // --- screens (DOM overlays) --------------------------------------------
@@ -145,17 +145,17 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     setScreen('wasted');
   };
 
-  function resetPlayerToSafehouse() {
+  function sendPlayerHome() {
     world.player = createPlayer(PLACES.safehouse.x, PLACES.safehouse.y);
   }
 
-  function newGame() {
+  function startFresh() {
     clearSave();
     input.actions = 0;
     world.cash = ECONOMY.startCash;
     world.missionIndex = 0;
     world.stats = { carsStolen: 0, pedsHit: 0, copsDown: 0, missionsDone: 0 };
-    resetPlayerToSafehouse();
+    sendPlayerHome();
     // Clear police and wrecks, keep the parked cars, bring the traffic back.
     world.cars = world.cars.filter((c) => c.kind === 'parked');
     spawnTrafficCars(world, 14);
@@ -169,17 +169,17 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     world.audio.ensure();
   }
 
-  function continueGame() {
+  function resumeSaved() {
     const save = loadGame();
     if (!save) {
-      newGame();
+      startFresh();
       return;
     }
     input.actions = 0;
     world.cash = save.cash;
     world.missionIndex = Math.min(save.missionIndex, MISSIONS.length - 1);
     world.stats = save.stats || world.stats;
-    resetPlayerToSafehouse();
+    sendPlayerHome();
     world.player.armor = save.armor || 0;
     world.player.reserve = save.reserve || 48;
     world.setWanted(0);
@@ -191,7 +191,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
 
   function respawn(fine) {
     world.cash = Math.max(0, world.cash - fine);
-    resetPlayerToSafehouse();
+    sendPlayerHome();
     world.cops = [];
     world.setWanted(0);
     world.heli = null;
@@ -203,7 +203,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
   }
 
   // --- shops, prompts, pickups ---------------------------------------------
-  function nearestShop() {
+  function shopNearby() {
     const p = world.player;
     for (const key of ['gunshop', 'garage', 'safehouse']) {
       const s = PLACES[key];
@@ -265,7 +265,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
 
   function refreshPrompt() {
     const player = world.player;
-    const shop = nearestShop();
+    const shop = shopNearby();
     if (shop === 'gunshop') world.prompt = 'E — Buy ammo $60';
     else if (shop === 'garage') world.prompt = player.inCar ? 'E — Repair $80 / Lay low' : 'E — Lay low (clear wanted)';
     else if (shop === 'safehouse') world.prompt = 'E — Heal & save';
@@ -273,7 +273,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     else world.prompt = '';
   }
 
-  function collectPickup(pk) {
+  function takePickup(pk) {
     const p = world.player;
     pk.taken = true;
     if (pk.kind === 'health') {
@@ -292,12 +292,12 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     const p = world.player;
     for (const pk of world.pickups) {
       if (pk.taken) continue;
-      if (Math.hypot(pk.x - p.x, pk.y - p.y) < 32) collectPickup(pk);
+      if (Math.hypot(pk.x - p.x, pk.y - p.y) < 32) takePickup(pk);
     }
   }
 
   // --- bullets ---------------------------------------------------------------
-  function enemyDown(e) {
+  function foeDown(e) {
     spawnExplosion(world, e.x, e.y, false);
     if (e.boss) {
       world.cash += 500;
@@ -309,7 +309,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     world.audio.pickup();
   }
 
-  function bulletHitsWorld(b) {
+  function bulletVsWorld(b) {
     // A player bullet: pedestrians, then cops, then rivals, then cars.
     if (checkBulletHitPed(world, b)) return true;
     for (const cop of world.cops) {
@@ -323,7 +323,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
       if (e.health > 0 && Math.hypot(e.x - b.x, e.y - b.y) < 16) {
         e.health -= b.damage;
         world.audio.hit();
-        if (e.health <= 0) enemyDown(e);
+        if (e.health <= 0) foeDown(e);
         return true;
       }
     }
@@ -338,7 +338,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     return false;
   }
 
-  function bulletHitsPlayer(b) {
+  function bulletVsPlayer(b) {
     const p = world.player;
     if (p.inCar) {
       const car = p.inCar;
@@ -370,15 +370,15 @@ export function createGame({ canvas, hud, audio, input, seed }) {
         continue;
       }
       if (b.from === 'player') {
-        if (bulletHitsWorld(b)) b.life = 0;
-      } else if (bulletHitsPlayer(b)) {
+        if (bulletVsWorld(b)) b.life = 0;
+      } else if (bulletVsPlayer(b)) {
         b.life = 0;
       }
     }
     world.bullets = world.bullets.filter((b) => b.life > 0);
   }
 
-  function finishMission() {
+  function resolveMission() {
     const m = world.mission;
     if (!m) return;
     if (m.status === 'complete') {
@@ -396,7 +396,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     }
   }
 
-  function cameraFor(player) {
+  function viewFor(player) {
     return {
       x: Math.max(0, Math.min(WORLD.w - canvas.clientWidth, player.x - canvas.clientWidth / 2)),
       y: Math.max(0, Math.min(WORLD.h - canvas.clientHeight, player.y - canvas.clientHeight / 2)),
@@ -410,14 +410,14 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     const actions = stepInput.takeActions();
     world.interactHeld = stepInput.held('e');
     // Aim: mouse position in screen space, converted to world space.
-    const cam = cameraFor(player);
+    const cam = viewFor(player);
     const aimWorld = { x: cam.x + stepInput.mouseX, y: cam.y + stepInput.mouseY };
 
     if (actions & ACTION_INTERACT) {
       if (player.inCar) {
         exitCar(world);
       } else {
-        const shop = nearestShop();
+        const shop = shopNearby();
         if (shop) shopAction(shop);
         else {
           const car = nearestStealableCar(world, 60);
@@ -450,10 +450,10 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     if (world.camera.shake > 0) world.camera.shake = Math.max(0, world.camera.shake - dt * 30);
     if (player.health <= 0 && world.screen === 'play') world.wasted();
 
-    finishMission();
+    resolveMission();
 
-    // New in this rewrite: a quiet autosave while playing, so quitting to
-    // the title never loses more than a few seconds of progress.
+    // A quiet autosave while playing, so quitting to the title never loses
+    // more than a few seconds of progress.
     if (world.screen === 'play') {
       world.saveTimer += dt;
       if (world.saveTimer > AUTOSAVE_SECONDS) {
@@ -484,8 +484,8 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     if (actions & ACTION_MUTE) world.audio.toggleMute();
     if (actions & ACTION_CONFIRM) {
       if (world.screen === 'title') {
-        if (hasSave()) continueGame();
-        else newGame();
+        if (hasSave()) resumeSaved();
+        else startFresh();
       }
     }
     // Hand the rest back: the world step is the only consumer of interact/reload.
@@ -512,10 +512,10 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', () => { audio.ensure(); fn(); });
   };
-  on('btn-new', newGame);
-  on('btn-continue', continueGame);
+  on('btn-new', startFresh);
+  on('btn-continue', resumeSaved);
   on('btn-resume', () => setScreen('play'));
-  on('btn-restart', () => newGame());
+  on('btn-restart', () => startFresh());
   on('btn-quit', () => { saveGame(world); setScreen('title'); });
   on('btn-next-mission', () => {
     world.missionIndex += 1;
@@ -541,7 +541,7 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     setScreen('play');
     world.showMessage('Free roam. Solmar is yours — the story is done, the city is not.', 5);
   });
-  on('btn-victory-restart', () => newGame());
+  on('btn-victory-restart', () => startFresh());
 
   // --- the game object ------------------------------------------------------------
   const game = {
@@ -550,8 +550,8 @@ export function createGame({ canvas, hud, audio, input, seed }) {
     fakeInput: null,
     startMission: (i) => startMission(world, i),
     setWanted: (n) => world.setWanted(n),
-    newGame,
-    continueGame,
+    newGame: startFresh,
+    continueGame: resumeSaved,
     step: (dt, inputOverride) => stepWorld(dt, inputOverride || input),
     update,
     render,

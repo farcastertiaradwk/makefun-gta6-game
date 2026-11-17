@@ -41,7 +41,7 @@ function topUpMagazine(player) {
   player.reserve -= take;
 }
 
-function shootPistol(world, player) {
+function firePistol(world, player) {
   player.magazine -= 1;
   player.fireCooldown = PLAYER.fireInterval;
   const spread = (world.random.next() - 0.5) * 0.08;
@@ -94,7 +94,7 @@ export function updatePlayerOnFoot(world, dt, input, aimWorld) {
   // Hold the mouse to fire while the magazine has anything in it.
   if (input.mouseDown && player.fireCooldown <= 0 && player.reloading <= 0) {
     if (player.magazine > 0) {
-      shootPistol(world, player);
+      firePistol(world, player);
     } else if (player.reserve > 0) {
       player.reloading = PLAYER.reloadTime;
     }

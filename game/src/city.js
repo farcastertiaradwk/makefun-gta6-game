@@ -1,10 +1,24 @@
 // Solmar itself: roads, blocks, buildings, the park, the beach and the
-// harbour, generated once from a seed. The collision and road queries live
-// here too, so movement, traffic and the minimap all agree about the map.
-import { WORLD, ROADS_X, ROADS_Y, ROAD_W, BEACH_Y, SEA_Y, HARBOUR, PALETTE, PLACES } from './config.js';
+// harbour, generated once from a seed. Collision and road queries live here
+// too, so movement, traffic and the minimap all agree about the map. The
+// draws from the seeded stream happen in a fixed order — park trees, then
+// buildings, then parked-car slots — and that order is what makes seed 7
+// rebuild the same city every time.
 
-// Call fn once per cell between neighbouring roads.
-function visitBlocks(fn) {
+import {
+  BEACH_Y,
+  HARBOUR,
+  PALETTE,
+  PLACES,
+  ROADS_X,
+  ROADS_Y,
+  ROAD_W,
+  SEA_Y,
+  WORLD,
+} from './config.js';
+
+// Call fn once per cell between neighbouring roads (5 columns x 4 rows).
+function walkBlocks(fn) {
   for (let i = 0; i < ROADS_X.length - 1; i += 1) {
     for (let j = 0; j < ROADS_Y.length - 1; j += 1) {
       fn({
@@ -17,11 +31,11 @@ function visitBlocks(fn) {
   }
 }
 
-function parkBlock(b) {
+function isPark(b) {
   return b.x0 > 1050 && b.x0 < 1450 && b.y0 > 950 && b.y0 < 1300;
 }
 
-function plazaBlock(b) {
+function isPlaza(b) {
   return b.x0 > 650 && b.x0 < 1050 && b.y0 > 600 && b.y0 < 950;
 }
 
@@ -31,9 +45,9 @@ export function createCity(random) {
   const lamps = [];
   const parkedSpots = [];
 
-  visitBlocks((b) => {
-    if (parkBlock(b)) {
-      // Palm Park: trees in rows, a pond in the middle, paths crossing it.
+  walkBlocks((b) => {
+    if (isPark(b)) {
+      // Palm Park: fourteen trees scattered across the block.
       for (let i = 0; i < 14; i += 1) {
         trees.push({
           x: random.range(b.x0 + 20, b.x1 - 20),
@@ -43,7 +57,7 @@ export function createCity(random) {
       }
       return;
     }
-    if (plazaBlock(b)) return; // Solmar Plaza stays open.
+    if (isPlaza(b)) return; // Solmar Plaza stays open.
     // One or two buildings per block, kept inside it with a margin.
     const count = random.chance(0.45) ? 2 : 1;
     for (let k = 0; k < count; k += 1) {
@@ -71,15 +85,18 @@ export function createCity(random) {
     }
   }
 
-  // Parked cars along road edges, clear of intersections and shops.
+  // Parked cars along road edges, clear of intersections and the gun shop.
   for (let i = 0; i < 16; i += 1) {
     const vertical = random.chance(0.5);
     const road = random.pick(vertical ? ROADS_X : ROADS_Y);
     const along = random.range(320, 2280);
     const side = random.chance(0.5) ? -1 : 1;
-    const spot = vertical
-      ? { x: road + side * (ROAD_W / 2 + 18), y: along, angle: side > 0 ? Math.PI / 2 : -Math.PI / 2 }
-      : { x: along, y: road + side * (ROAD_W / 2 + 18), angle: side > 0 ? 0 : Math.PI };
+    const offset = side * (ROAD_W / 2 + 18);
+    const spot = {
+      x: vertical ? road + offset : along,
+      y: vertical ? along : road + offset,
+      angle: vertical ? (side > 0 ? Math.PI / 2 : -Math.PI / 2) : side > 0 ? 0 : Math.PI,
+    };
     if (spot.x < 60 || spot.x > WORLD.w - 60 || spot.y < 60 || spot.y > BEACH_Y - 40) continue;
     if (Math.abs(spot.x - PLACES.gunshop.x) < 90 && Math.abs(spot.y - PLACES.gunshop.y) < 90) continue;
     parkedSpots.push(spot);
@@ -104,7 +121,7 @@ export function inSand(x, y) {
   return y >= BEACH_Y && y < SEA_Y;
 }
 
-function circleOverlapsRect(cx, cy, r, rect) {
+function circleHitsRect(cx, cy, r, rect) {
   const nx = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
   const ny = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
   const dx = cx - nx;
@@ -112,13 +129,14 @@ function circleOverlapsRect(cx, cy, r, rect) {
   return dx * dx + dy * dy < r * r;
 }
 
-// True when a circle at (x, y) with radius r cannot be there. Cars stop at sand too.
+// True when a circle at (x, y) with radius r cannot be there. Cars stop at
+// sand too.
 export function isBlocked(city, x, y, r, isCar) {
   if (x < r + 4 || y < r + 4 || x > WORLD.w - r - 4 || y > WORLD.h - r - 4) return true;
   if (inWater(x, y)) return true;
   if (isCar && inSand(x, y)) return true;
   for (const b of city.buildings) {
-    if (circleOverlapsRect(x, y, r, b)) return true;
+    if (circleHitsRect(x, y, r, b)) return true;
   }
   return false;
 }
@@ -146,7 +164,7 @@ export function nearestIntersection(x, y) {
   return best;
 }
 
-// The road line nearest to a point: { axis: 'x'|'y', at: number }.
+// The road line nearest to a point: { axis: 'x'|'y', at: number, d: number }.
 export function nearestRoad(x, y) {
   let best = { axis: 'x', at: ROADS_X[0], d: Infinity };
   for (const rx of ROADS_X) {

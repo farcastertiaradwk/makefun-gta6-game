@@ -32,19 +32,19 @@ export function spawnTrafficCars(world, count) {
     const rx = world.random.pick(ROADS_X);
     const ry = world.random.pick(ROADS_Y);
     const vertical = world.random.chance(0.5);
-    const car = createCar(
-      vertical ? rx : world.random.range(300, 2300),
-      vertical ? world.random.range(300, 1600) : ry,
-      vertical ? (world.random.chance(0.5) ? Math.PI / 2 : -Math.PI / 2) : (world.random.chance(0.5) ? 0 : Math.PI),
-      world.random.pick(['#c0392b', '#2980b9', '#f1c40f', '#ecf0f1', '#2c3e50', '#e67e22', '#8e44ad', '#16a085', '#d35400']),
-      'traffic',
-    );
+    const x = vertical ? rx : world.random.range(300, 2300);
+    const y = vertical ? world.random.range(300, 1600) : ry;
+    const angle = vertical
+      ? world.random.chance(0.5) ? Math.PI / 2 : -Math.PI / 2
+      : world.random.chance(0.5) ? 0 : Math.PI;
+    const color = world.random.pick(['#c0392b', '#2980b9', '#f1c40f', '#ecf0f1', '#2c3e50', '#e67e22', '#8e44ad', '#16a085', '#d35400']);
+    const car = createCar(x, y, angle, color, 'traffic');
     car.speed = 60;
     world.cars.push(car);
   }
 }
 
-function endCircles(car) {
+function noseTail(car) {
   const fx = Math.cos(car.angle) * 14;
   const fy = Math.sin(car.angle) * 14;
   return [
@@ -54,7 +54,7 @@ function endCircles(car) {
 }
 
 function blockedAt(city, car, nx, ny) {
-  for (const c of endCircles({ x: nx, y: ny, angle: car.angle })) {
+  for (const c of noseTail({ x: nx, y: ny, angle: car.angle })) {
     if (isBlocked(city, c.x, c.y, c.r, true)) return true;
   }
   return false;
@@ -72,7 +72,7 @@ function advanceCar(city, car, dt) {
   car.y = Math.max(24, Math.min(WORLD.h - 24, car.y));
 }
 
-function normAngle(diff) {
+function wrapDelta(diff) {
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
   return diff;
@@ -120,7 +120,7 @@ export function updatePlayerCar(world, dt, input) {
   }
 }
 
-function chooseJunction(car, random) {
+function pickNextCrossing(car, random) {
   // From the current target, choose an adjacent intersection (never straight back).
   const cur = car.target || nearestIntersection(car.x, car.y);
   const options = [];
@@ -132,7 +132,7 @@ function chooseJunction(car, random) {
     if (ry === cur.y) continue;
     options.push({ x: cur.x, y: ry });
   }
-  // Prefer the two nearest options so traffic stays local and believable.
+  // Prefer the nearest options so traffic stays local and believable.
   options.sort((a, b) => {
     const da = Math.abs(a.x - cur.x) + Math.abs(a.y - cur.y);
     const db = Math.abs(b.x - cur.x) + Math.abs(b.y - cur.y);
@@ -142,7 +142,7 @@ function chooseJunction(car, random) {
   return random.pick(near);
 }
 
-function blockedAhead(world, car) {
+function carAhead(world, car) {
   // Stop for the car ahead, so traffic queues instead of piling up.
   for (const other of world.cars) {
     if (other === car || other.wrecked) continue;
@@ -158,18 +158,18 @@ function blockedAhead(world, car) {
 export function updateTraffic(world, dt) {
   for (const car of world.cars) {
     if (car.kind !== 'traffic' || car.wrecked) continue;
-    if (!car.target) car.target = chooseJunction(car, world.random);
+    if (!car.target) car.target = pickNextCrossing(car, world.random);
     const dx = car.target.x - car.x;
     const dy = car.target.y - car.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 12) {
-      car.target = chooseJunction(car, world.random);
+      car.target = pickNextCrossing(car, world.random);
       continue;
     }
     const want = Math.atan2(dy, dx);
-    const diff = normAngle(want - car.angle);
+    const diff = wrapDelta(want - car.angle);
     car.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
-    const targetSpeed = blockedAhead(world, car) ? 0 : TRAFFIC_SPEED;
+    const targetSpeed = carAhead(world, car) ? 0 : TRAFFIC_SPEED;
     car.speed += (targetSpeed - car.speed) * Math.min(1, 2.5 * dt);
     advanceCar(world.city, car, dt);
   }
@@ -183,7 +183,7 @@ export function updatePoliceCars(world, dt) {
     const dy = player.y - car.y;
     const dist = Math.hypot(dx, dy);
     const want = Math.atan2(dy, dx);
-    const diff = normAngle(want - car.angle);
+    const diff = wrapDelta(want - car.angle);
     const targetSpeed = dist > 60 ? 470 : 200;
     car.speed += (targetSpeed - car.speed) * Math.min(1, 2 * dt);
     car.angle += Math.max(-3.2 * dt, Math.min(3.2 * dt, diff));

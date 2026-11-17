@@ -1,7 +1,7 @@
 // Particles, floating text and explosions — the juice. Particles are plain
 // data; the renderer draws them. An explosion also shakes the camera and
 // makes a noise.
-function driftParticle(p, dt) {
+function ageParticle(p, dt) {
   p.life -= dt;
   p.x += p.vx * dt;
   p.y += p.vy * dt;
@@ -14,7 +14,7 @@ function driftParticle(p, dt) {
 }
 
 export function updateParticles(world, dt) {
-  for (const p of world.particles) driftParticle(p, dt);
+  for (const p of world.particles) ageParticle(p, dt);
   world.particles = world.particles.filter((p) => p.life > 0 && p.size > 0);
   for (const f of world.floaters) {
     f.life -= dt;
