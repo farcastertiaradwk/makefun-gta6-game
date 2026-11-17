@@ -1,7 +1,7 @@
-// All sound is synthesised with WebAudio: no audio files, no network. Engine
-// hum, sirens, gunshots, explosions, pickups and a small bassline loop are
-// built from oscillators and filtered noise. Created on the first user gesture;
-// M toggles mute.
+// Every sound is synthesised with WebAudio: no audio files, no network.
+// Engine hum, sirens, gunshots, explosions, pickups and a small bassline
+// loop are built from oscillators and filtered noise. The context is born
+// on the first user gesture; M toggles mute.
 export function createAudio() {
   let ctx = null;
   let master = null;
@@ -12,16 +12,16 @@ export function createAudio() {
   let musicStep = 0;
 
   // A lazy bassline: A minor, one bar of eight steps, looped.
-  const BASSLINE = [55, 0, 55, 65.41, 0, 55, 49, 0];
+  const BASS_PATTERN = [55, 0, 55, 65.41, 0, 55, 49, 0];
 
-  function noiseBuffer(seconds) {
+  function makeNoise(seconds) {
     const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * seconds), ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
     return buffer;
   }
 
-  function blip(freq, duration, type, volume, slideTo) {
+  function tone(freq, duration, type, volume, slideTo) {
     if (!ctx || muted) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -36,10 +36,10 @@ export function createAudio() {
     osc.stop(ctx.currentTime + duration);
   }
 
-  function noiseBurst(duration, volume, filterFreq) {
+  function burst(duration, volume, filterFreq) {
     if (!ctx || muted) return;
     const source = ctx.createBufferSource();
-    source.buffer = noiseBuffer(duration);
+    source.buffer = makeNoise(duration);
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.value = filterFreq;
@@ -52,18 +52,18 @@ export function createAudio() {
     source.start();
   }
 
-  function startMusic() {
+  function startBassline() {
     if (musicTimer) return;
     musicTimer = window.setInterval(() => {
       if (!ctx || muted) return;
-      const freq = BASSLINE[musicStep % BASSLINE.length];
+      const freq = BASS_PATTERN[musicStep % BASS_PATTERN.length];
       musicStep += 1;
-      if (freq) blip(freq, 0.22, 'triangle', 0.10);
-      if (musicStep % 2 === 0) noiseBurst(0.03, 0.02, 6000);
+      if (freq) tone(freq, 0.22, 'triangle', 0.10);
+      if (musicStep % 2 === 0) burst(0.03, 0.02, 6000);
     }, 240);
   }
 
-  function ensure() {
+  function unlock() {
     if (ctx) {
       if (ctx.state === 'suspended') ctx.resume();
       return true;
@@ -75,7 +75,7 @@ export function createAudio() {
       master = ctx.createGain();
       master.gain.value = 0.5;
       master.connect(ctx.destination);
-      startMusic();
+      startBassline();
       return true;
     } catch {
       return false;
@@ -129,23 +129,23 @@ export function createAudio() {
   }
 
   function playNotes(notes, gap, duration, type, volume) {
-    notes.forEach((f, i) => window.setTimeout(() => blip(f, duration, type, volume), i * gap));
+    notes.forEach((f, i) => window.setTimeout(() => tone(f, duration, type, volume), i * gap));
   }
 
   return {
-    ensure,
+    ensure: unlock,
     toggleMute() {
       muted = !muted;
       if (master) master.gain.value = muted ? 0 : 0.5;
       return muted;
     },
     get muted() { return muted; },
-    gunshot() { noiseBurst(0.12, 0.35, 1800); blip(180, 0.08, 'square', 0.12, 60); },
-    explosion() { noiseBurst(0.7, 0.5, 500); blip(70, 0.5, 'sine', 0.4, 30); },
-    pickup() { blip(660, 0.09, 'sine', 0.15); window.setTimeout(() => blip(990, 0.12, 'sine', 0.15), 80); },
+    gunshot() { burst(0.12, 0.35, 1800); tone(180, 0.08, 'square', 0.12, 60); },
+    explosion() { burst(0.7, 0.5, 500); tone(70, 0.5, 'sine', 0.4, 30); },
+    pickup() { tone(660, 0.09, 'sine', 0.15); window.setTimeout(() => tone(990, 0.12, 'sine', 0.15), 80); },
     mission() { playNotes([523, 659, 784, 1047], 110, 0.18, 'triangle', 0.18); },
     fail() { playNotes([392, 330, 262], 140, 0.22, 'triangle', 0.15); },
-    hit() { noiseBurst(0.06, 0.2, 900); },
+    hit() { burst(0.06, 0.2, 900); },
     setEngine,
     setSiren,
   };

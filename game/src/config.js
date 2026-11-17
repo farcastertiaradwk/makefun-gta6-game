@@ -1,32 +1,26 @@
-// SOLMAR HEAT — every number the game shares, in one place.
-// The map, the movement, the heat, the money and the look. A balance pass
-// touches this file and nothing else.
+// SOLMAR HEAT — the shared numbers. One place holds the map, the movement,
+// the heat, the money and the look, so a balance pass edits here and nowhere
+// else. Values are the game's identity: change one and the playtest notices.
 
-// The world advances in fixed steps of one sixtieth of a second.
+// A fixed heartbeat: the world steps sixty times a second.
 export const STEP = 1 / 60;
 
-// ---------------------------------------------------------------------------
-// Solmar itself: a rectangle of streets with a beach and a harbour.
-// ---------------------------------------------------------------------------
-
+// --- Solmar's shape: streets, a beach on the south edge, a harbour east. ---
 export const WORLD = { w: 2600, h: 1900 };
 
-// Six avenues north-south, five streets east-west.
+// Six north-south avenues, five east-west streets, all 90 px wide.
 export const ROADS_X = [250, 650, 1050, 1450, 1850, 2250];
 export const ROADS_Y = [250, 600, 950, 1300, 1650];
 export const ROAD_W = 90;
 
-// The beach runs along the south edge; the sea is the world's south wall.
+// Sand starts here; the sea is the world's southern wall.
 export const BEACH_Y = 1750;
 export const SEA_Y = 1840;
 
-// The harbour is the east edge between these y values.
+// Harbour water hugs the east edge between these two heights.
 export const HARBOUR = { x: 2420, y0: 300, y1: 950 };
 
-// ---------------------------------------------------------------------------
-// Moving: on foot and behind the wheel.
-// ---------------------------------------------------------------------------
-
+// --- Moving around: on foot, and behind the wheel. ---
 export const PLAYER = {
   radius: 14,
   walkSpeed: 170,
@@ -55,10 +49,7 @@ export const TRAFFIC_SPEED = 95;
 export const PED_SPEED = 38;
 export const PED_FLEE_SPEED = 78;
 
-// ---------------------------------------------------------------------------
-// The law: heat, decay and what raises it.
-// ---------------------------------------------------------------------------
-
+// --- The law: how heat grows, and how it cools off. ---
 export const WANTED = {
   decaySeconds: 15,
   decayRange: 380,
@@ -81,10 +72,7 @@ export const POLICE = {
   spawnInterval: 2.2,
 };
 
-// ---------------------------------------------------------------------------
-// Money: what missions pay and what the shops charge.
-// ---------------------------------------------------------------------------
-
+// --- Money: mission pay and shop prices. ---
 export const ECONOMY = {
   startCash: 150,
   missionReward: [400, 600, 800, 900, 1500, 2500],
@@ -97,10 +85,7 @@ export const ECONOMY = {
   wastedFine: 100,
 };
 
-// ---------------------------------------------------------------------------
-// The look of the city.
-// ---------------------------------------------------------------------------
-
+// --- The look: sun-soaked Solmar. ---
 export const PALETTE = {
   grass: '#7fae5a',
   grassDark: '#6f9c4e',
@@ -122,10 +107,7 @@ export const PALETTE = {
   markerEnemy: '#ff4d4d',
 };
 
-// ---------------------------------------------------------------------------
-// Fixed places: every mission and shop points at one of these.
-// ---------------------------------------------------------------------------
-
+// --- Named places: missions and shops all point at one of these. ---
 export const PLACES = {
   safehouse: { x: 300, y: 1600, name: 'Sunset Safehouse' },
   gunshop: { x: 700, y: 300, name: 'Iron & Lead' },

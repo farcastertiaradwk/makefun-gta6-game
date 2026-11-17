@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SOLMAR HEAT — an open-world crime game</title>
+<title>SOLMAR HEAT — take the city back</title>
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<canvas id="game" aria-label="SOLMAR HEAT: an open-world crime game in the city of Solmar"></canvas>
+<canvas id="game" aria-label="SOLMAR HEAT: an open-world crime game set in the city of Solmar"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
 
-<div id="hud" class="hidden-until-play">
+<div id="hud" class="hidden">
   <div id="hud-top-left">
     <div id="hud-stars">☆☆☆☆☆</div>
     <div class="bar"><div id="hud-health-fill"></div></div>
@@ -34,16 +34,17 @@
 <div id="screen-title" class="screen">
   <h1>SOLMAR HEAT</h1>
   <p class="tagline">Sun, sea, and stolen cars. Take the city back from Kane.</p>
-  <p class="story">Danny Reyes is a driver with no work and a city to win back. Six jobs for
-  Mara Voss and the Harbour Crew stand between him and the top of Solmar: lift a car,
-  run the packages, outdrive the law, settle the score in the Plaza, crack the Harbor
-  Bank, and finish Kane.</p>
+  <p class="story">Danny Reyes drove getaway for the wrong people and paid for it. Now he is
+  back in Solmar with no work, no wheels, and one way up: six jobs for Mara Voss and the
+  Harbour Crew. Lift a car. Run the packages. Outdrive the law. Settle the score in the
+  Plaza. Crack the Harbor Bank. And finish Kane — the man who owns this city.</p>
   <div class="buttons">
-    <button id="btn-continue">Continue</button>
     <button id="btn-new">New Game</button>
+    <button id="btn-continue">Continue</button>
   </div>
-  <p class="controls">WASD move / drive &nbsp;·&nbsp; Mouse aim, click shoot &nbsp;·&nbsp; E steal car / interact
-  &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Shift sprint &nbsp;·&nbsp; Space handbrake &nbsp;·&nbsp; Esc pause &nbsp;·&nbsp; M mute</p>
+  <p class="controls">WASD move / drive &nbsp;·&nbsp; Mouse aim, click to shoot &nbsp;·&nbsp; E steal car / use
+  shop &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Shift sprint &nbsp;·&nbsp; Space handbrake &nbsp;·&nbsp; Esc pause
+  &nbsp;·&nbsp; M mute</p>
 </div>
 
 <div id="screen-pause" class="screen hidden">

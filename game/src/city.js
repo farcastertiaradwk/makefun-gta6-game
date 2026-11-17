@@ -1,11 +1,10 @@
-// The city of Solmar: roads, blocks, buildings, parks, beach and harbour,
-// all generated once from a seed. This file also holds the collision and
-// road queries every other system uses, so movement, traffic and the minimap
-// all agree about the map.
+// Solmar itself: roads, blocks, buildings, the park, the beach and the
+// harbour, generated once from a seed. The collision and road queries live
+// here too, so movement, traffic and the minimap all agree about the map.
 import { WORLD, ROADS_X, ROADS_Y, ROAD_W, BEACH_Y, SEA_Y, HARBOUR, PALETTE, PLACES } from './config.js';
 
-// The blocks are the cells between neighbouring roads.
-function eachBlock(fn) {
+// Call fn once per cell between neighbouring roads.
+function visitBlocks(fn) {
   for (let i = 0; i < ROADS_X.length - 1; i += 1) {
     for (let j = 0; j < ROADS_Y.length - 1; j += 1) {
       fn({
@@ -18,11 +17,11 @@ function eachBlock(fn) {
   }
 }
 
-function blockIsPark(b) {
+function parkBlock(b) {
   return b.x0 > 1050 && b.x0 < 1450 && b.y0 > 950 && b.y0 < 1300;
 }
 
-function blockIsPlaza(b) {
+function plazaBlock(b) {
   return b.x0 > 650 && b.x0 < 1050 && b.y0 > 600 && b.y0 < 950;
 }
 
@@ -32,8 +31,8 @@ export function createCity(random) {
   const lamps = [];
   const parkedSpots = [];
 
-  eachBlock((b) => {
-    if (blockIsPark(b)) {
+  visitBlocks((b) => {
+    if (parkBlock(b)) {
       // Palm Park: trees in rows, a pond in the middle, paths crossing it.
       for (let i = 0; i < 14; i += 1) {
         trees.push({
@@ -44,8 +43,8 @@ export function createCity(random) {
       }
       return;
     }
-    if (blockIsPlaza(b)) return; // Solmar Plaza stays open.
-    // One or two buildings per block, kept inside the block with a margin.
+    if (plazaBlock(b)) return; // Solmar Plaza stays open.
+    // One or two buildings per block, kept inside it with a margin.
     const count = random.chance(0.45) ? 2 : 1;
     for (let k = 0; k < count; k += 1) {
       const w = random.range(90, 170);
@@ -53,7 +52,10 @@ export function createCity(random) {
       const x = random.range(b.x0 + 10, b.x1 - w - 10);
       const y = random.range(b.y0 + 10, b.y1 - h - 10);
       buildings.push({
-        x, y, w, h,
+        x,
+        y,
+        w,
+        h,
         height: random.range(10, 26),
         roof: random.pick(PALETTE.buildingRoof),
         id: buildings.length,
@@ -61,7 +63,7 @@ export function createCity(random) {
     }
   });
 
-  // Street lamps at every intersection corner.
+  // A lamp on two opposite corners of every intersection.
   for (const x of ROADS_X) {
     for (const y of ROADS_Y) {
       lamps.push({ x: x - ROAD_W / 2 - 8, y: y - ROAD_W / 2 - 8 });
@@ -102,7 +104,7 @@ export function inSand(x, y) {
   return y >= BEACH_Y && y < SEA_Y;
 }
 
-function circleHitsRect(cx, cy, r, rect) {
+function circleOverlapsRect(cx, cy, r, rect) {
   const nx = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
   const ny = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
   const dx = cx - nx;
@@ -110,38 +112,41 @@ function circleHitsRect(cx, cy, r, rect) {
   return dx * dx + dy * dy < r * r;
 }
 
-/** True when a circle at (x, y) with radius r is blocked. Cars also stop at sand. */
+// True when a circle at (x, y) with radius r cannot be there. Cars stop at sand too.
 export function isBlocked(city, x, y, r, isCar) {
   if (x < r + 4 || y < r + 4 || x > WORLD.w - r - 4 || y > WORLD.h - r - 4) return true;
   if (inWater(x, y)) return true;
   if (isCar && inSand(x, y)) return true;
   for (const b of city.buildings) {
-    if (circleHitsRect(x, y, r, b)) return true;
+    if (circleOverlapsRect(x, y, r, b)) return true;
   }
   return false;
 }
 
-/** Move a circle with axis-separated sliding: try x, then y, so it slides along walls. */
+// Slide a circle along walls: try the x step, then the y step.
 export function moveCircle(city, entity, dx, dy, isCar) {
   const r = entity.radius;
   if (!isBlocked(city, entity.x + dx, entity.y, r, isCar)) entity.x += dx;
   if (!isBlocked(city, entity.x, entity.y + dy, r, isCar)) entity.y += dy;
 }
 
-/** The nearest intersection (road crossing) to a point, for traffic routing. */
+// The road crossing nearest to a point, for traffic routing.
 export function nearestIntersection(x, y) {
   let best = null;
   let bestD = Infinity;
   for (const rx of ROADS_X) {
     for (const ry of ROADS_Y) {
       const d = (x - rx) * (x - rx) + (y - ry) * (y - ry);
-      if (d < bestD) { bestD = d; best = { x: rx, y: ry }; }
+      if (d < bestD) {
+        bestD = d;
+        best = { x: rx, y: ry };
+      }
     }
   }
   return best;
 }
 
-/** The road line nearest to a point: { axis: 'x'|'y', at: number }. */
+// The road line nearest to a point: { axis: 'x'|'y', at: number }.
 export function nearestRoad(x, y) {
   let best = { axis: 'x', at: ROADS_X[0], d: Infinity };
   for (const rx of ROADS_X) {

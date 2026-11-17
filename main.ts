@@ -1,9 +1,9 @@
 // SOLMAR HEAT — a complete open-world crime game for gta6-01. Node 22,
 // standard library only. The game is this directory's game/ folder: plain
 // static files a desktop browser loads offline (game/index.html and its ES
-// modules, no library, no network request). This program copies game/ and
-// screenshots/ from beside this file to /output and writes
-// /output/dossier.json, the summary the judge reads, with the vendored
+// modules, no library, no network request). This program stages game/ and
+// screenshots/ from beside this file into the output directory and writes
+// dossier.json there, the summary the judge reads, using the vendored
 // make.fun library.
 //
 // Serve it locally with `node serve.ts` (in the workdir, not part of the
@@ -19,7 +19,7 @@ import { buildDossier } from './vendor/makefun-game.ts';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-function copyEntry() {
+function stageOutput() {
   mkdirSync(out, { recursive: true });
   cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
   mkdirSync(join(out, 'screenshots'), { recursive: true });
@@ -28,7 +28,7 @@ function copyEntry() {
   }
 }
 
-copyEntry();
+stageOutput();
 
 // The scorer's own caps (reference/gate.json): only text_max_bytes shapes the
 // bytes; the others refuse an entry the scorer would refuse (more than 4

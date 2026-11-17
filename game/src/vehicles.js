@@ -1,6 +1,6 @@
-// Cars: arcade driving physics for the player, grid-following traffic, and
-// police pursuit cars. A car is two circles (nose and tail) for collisions
-// against buildings, and one circle against other cars.
+// Cars: arcade driving for the player, grid-following traffic, and police
+// pursuit cars. A car is two circles (nose and tail) against buildings,
+// and one circle against other cars.
 import { CAR, TRAFFIC_SPEED, WORLD, ROADS_X, ROADS_Y } from './config.js';
 import { isBlocked, nearestIntersection } from './city.js';
 
@@ -9,7 +9,9 @@ let nextId = 1;
 export function createCar(x, y, angle, color, kind) {
   return {
     id: nextId,
-    x, y, angle,
+    x,
+    y,
+    angle,
     speed: 0,
     color,
     kind, // 'player' | 'traffic' | 'police' | 'parked'
@@ -24,7 +26,7 @@ export function createCar(x, y, angle, color, kind) {
   };
 }
 
-/** Spawn `count` fresh traffic cars on the roads, for a new game or a restart. */
+// Spawn `count` fresh traffic cars on the roads, for a new game or a restart.
 export function spawnTrafficCars(world, count) {
   for (let i = 0; i < count; i += 1) {
     const rx = world.random.pick(ROADS_X);
@@ -42,7 +44,7 @@ export function spawnTrafficCars(world, count) {
   }
 }
 
-function noseAndTail(car) {
+function endCircles(car) {
   const fx = Math.cos(car.angle) * 14;
   const fy = Math.sin(car.angle) * 14;
   return [
@@ -52,13 +54,13 @@ function noseAndTail(car) {
 }
 
 function blockedAt(city, car, nx, ny) {
-  for (const c of noseAndTail({ x: nx, y: ny, angle: car.angle })) {
+  for (const c of endCircles({ x: nx, y: ny, angle: car.angle })) {
     if (isBlocked(city, c.x, c.y, c.r, true)) return true;
   }
   return false;
 }
 
-function rollCar(city, car, dt) {
+function advanceCar(city, car, dt) {
   const nx = car.x + Math.cos(car.angle) * car.speed * dt;
   const ny = car.y + Math.sin(car.angle) * car.speed * dt;
   // Axis-separated, so the car slides along a wall instead of sticking to it.
@@ -70,13 +72,13 @@ function rollCar(city, car, dt) {
   car.y = Math.max(24, Math.min(WORLD.h - 24, car.y));
 }
 
-function wrapAngle(diff) {
+function normAngle(diff) {
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
   return diff;
 }
 
-/** Player driving: W/S throttle, A/D steering, Space handbrake. */
+// Player driving: W/S throttle, A/D steering, Space handbrake.
 export function updatePlayerCar(world, dt, input) {
   const car = world.player.inCar;
   if (!car || car.wrecked) return;
@@ -96,7 +98,7 @@ export function updatePlayerCar(world, dt, input) {
   const speedFactor = Math.min(1, Math.abs(car.speed) / 180);
   car.angle += steerInput * CAR.turnRate * speedFactor * Math.sign(car.speed) * dt;
   car.brakeLight = forward < 0 || handbrake;
-  rollCar(world.city, car, dt);
+  advanceCar(world.city, car, dt);
   world.player.x = car.x;
   world.player.y = car.y;
   world.audio.setEngine(Math.min(1, Math.abs(car.speed) / CAR.maxSpeed));
@@ -105,14 +107,20 @@ export function updatePlayerCar(world, dt, input) {
     if (car.smoke > 0.12) {
       car.smoke = 0;
       world.particles.push({
-        kind: 'smoke', x: car.x - Math.cos(car.angle) * 16, y: car.y - Math.sin(car.angle) * 16,
-        vx: (world.random.next() - 0.5) * 20, vy: -30, life: 0.8, max: 0.8, size: 9,
+        kind: 'smoke',
+        x: car.x - Math.cos(car.angle) * 16,
+        y: car.y - Math.sin(car.angle) * 16,
+        vx: (world.random.next() - 0.5) * 20,
+        vy: -30,
+        life: 0.8,
+        max: 0.8,
+        size: 9,
       });
     }
   }
 }
 
-function pickNextIntersection(car, random) {
+function chooseJunction(car, random) {
   // From the current target, choose an adjacent intersection (never straight back).
   const cur = car.target || nearestIntersection(car.x, car.y);
   const options = [];
@@ -134,7 +142,7 @@ function pickNextIntersection(car, random) {
   return random.pick(near);
 }
 
-function carAhead(world, car) {
+function blockedAhead(world, car) {
   // Stop for the car ahead, so traffic queues instead of piling up.
   for (const other of world.cars) {
     if (other === car || other.wrecked) continue;
@@ -150,20 +158,20 @@ function carAhead(world, car) {
 export function updateTraffic(world, dt) {
   for (const car of world.cars) {
     if (car.kind !== 'traffic' || car.wrecked) continue;
-    if (!car.target) car.target = pickNextIntersection(car, world.random);
+    if (!car.target) car.target = chooseJunction(car, world.random);
     const dx = car.target.x - car.x;
     const dy = car.target.y - car.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 12) {
-      car.target = pickNextIntersection(car, world.random);
+      car.target = chooseJunction(car, world.random);
       continue;
     }
     const want = Math.atan2(dy, dx);
-    const diff = wrapAngle(want - car.angle);
+    const diff = normAngle(want - car.angle);
     car.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
-    const targetSpeed = carAhead(world, car) ? 0 : TRAFFIC_SPEED;
+    const targetSpeed = blockedAhead(world, car) ? 0 : TRAFFIC_SPEED;
     car.speed += (targetSpeed - car.speed) * Math.min(1, 2.5 * dt);
-    rollCar(world.city, car, dt);
+    advanceCar(world.city, car, dt);
   }
 }
 
@@ -175,11 +183,11 @@ export function updatePoliceCars(world, dt) {
     const dy = player.y - car.y;
     const dist = Math.hypot(dx, dy);
     const want = Math.atan2(dy, dx);
-    const diff = wrapAngle(want - car.angle);
+    const diff = normAngle(want - car.angle);
     const targetSpeed = dist > 60 ? 470 : 200;
     car.speed += (targetSpeed - car.speed) * Math.min(1, 2 * dt);
     car.angle += Math.max(-3.2 * dt, Math.min(3.2 * dt, diff));
-    rollCar(world.city, car, dt);
+    advanceCar(world.city, car, dt);
     // Ramming the player's car damages it.
     const pc = player.inCar;
     if (pc && !pc.wrecked) {
@@ -193,8 +201,8 @@ export function updatePoliceCars(world, dt) {
   }
 }
 
-/** Push overlapping cars apart and chip paint off both on a hard hit. Damage is
- * rate-limited per car so one long scrape is one crash, not sixty. */
+// Push overlapping cars apart and chip paint off both on a hard hit. Damage is
+// rate-limited per car so one long scrape is one crash, not sixty.
 export function collideCars(world) {
   const cars = world.cars;
   for (let i = 0; i < cars.length; i += 1) {
@@ -220,8 +228,14 @@ export function collideCars(world) {
           a.health -= 6;
           b.health -= 6;
           world.particles.push({
-            kind: 'spark', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2,
-            vx: 0, vy: 0, life: 0.2, max: 0.2, size: 8,
+            kind: 'spark',
+            x: (a.x + b.x) / 2,
+            y: (a.y + b.y) / 2,
+            vx: 0,
+            vy: 0,
+            life: 0.2,
+            max: 0.2,
+            size: 8,
           });
           if (a.health <= 0) wreckCar(world, a);
           if (b.health <= 0) wreckCar(world, b);

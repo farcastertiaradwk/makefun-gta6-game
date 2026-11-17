@@ -1,6 +1,6 @@
-// The HUD: DOM readouts (stars, health, cash, objective, prompts) and a live
-// minimap canvas. The minimap is a tiny top-down map of Solmar with the
-// player, police, mission marker and shops on it.
+// The HUD: DOM readouts (stars, health, cash, objective, prompts) plus a
+// live minimap canvas. The minimap is a tiny top-down map of Solmar with
+// the player, the police, the mission marker and the shops on it.
 import { WORLD, ROADS_X, ROADS_Y, ROAD_W, BEACH_Y, SEA_Y, HARBOUR, PLACES } from './config.js';
 
 export function createHud() {
@@ -21,19 +21,19 @@ export function createHud() {
   };
 }
 
-function starRow(wanted) {
+function starsText(wanted) {
   let out = '';
   for (let i = 0; i < 5; i += 1) out += i < wanted ? '★' : '☆';
   return out;
 }
 
-function showMission(hud, m) {
+function paintMission(hud, m) {
   hud.missionTag.textContent = `MISSION ${m.index + 1}/6 — ${m.name || ''}`;
   hud.objective.textContent = m.objective || '';
   hud.timer.textContent = m.timer > 0 ? `⏱ ${Math.ceil(m.timer)}s` : '';
 }
 
-function showFreeRoam(hud) {
+function paintRoam(hud) {
   hud.missionTag.textContent = 'FREE ROAM — SOLMAR';
   hud.objective.textContent = 'Press E near a car to steal it. Find Mara at the Safehouse to start the story.';
   hud.timer.textContent = '';
@@ -41,13 +41,13 @@ function showFreeRoam(hud) {
 
 export function updateHud(hud, world) {
   const player = world.player;
-  hud.stars.textContent = starRow(world.wanted);
+  hud.stars.textContent = starsText(world.wanted);
   hud.stars.style.color = world.wanted > 0 ? '#ffd94d' : '#5a6b7a';
   hud.healthFill.style.width = `${Math.max(0, player.health)}%`;
   hud.armorFill.style.width = `${Math.max(0, player.armor)}%`;
   hud.cash.textContent = `$${world.cash}`;
-  if (world.mission) showMission(hud, world.mission);
-  else showFreeRoam(hud);
+  if (world.mission) paintMission(hud, world.mission);
+  else paintRoam(hud);
   if (player.inCar) {
     hud.ammo.textContent = '';
     hud.speed.textContent = `${Math.round(Math.abs(player.inCar.speed) * 0.24)} km/h`;
@@ -65,10 +65,10 @@ export function updateHud(hud, world) {
   drawMinimap(hud.minimap, world);
 }
 
-function drawMinimapBase(ctx, w, h, sx, sy) {
+function paintMapBase(ctx, w, h, sx, sy) {
   ctx.fillStyle = '#6f9c4e';
   ctx.fillRect(0, 0, w, h);
-  // Beach and sea.
+  // Beach, then sea.
   ctx.fillStyle = '#e8cf9a';
   ctx.fillRect(0, BEACH_Y * sy, w, (WORLD.h - BEACH_Y) * sy);
   ctx.fillStyle = '#2e7f9e';
@@ -80,7 +80,6 @@ function drawMinimapBase(ctx, w, h, sx, sy) {
   for (const ry of ROADS_Y) ctx.fillRect(0, (ry - ROAD_W / 2) * sy, w, ROAD_W * sy);
   // Buildings as small blocks.
   ctx.fillStyle = '#8a7a66';
-  return { ctx, w, h, sx, sy };
 }
 
 export function drawMinimap(canvas, world) {
@@ -89,7 +88,7 @@ export function drawMinimap(canvas, world) {
   const h = canvas.height;
   const sx = w / WORLD.w;
   const sy = h / WORLD.h;
-  drawMinimapBase(ctx, w, h, sx, sy);
+  paintMapBase(ctx, w, h, sx, sy);
   // Shops.
   ctx.fillStyle = '#e8d44d';
   for (const key of ['gunshop', 'garage', 'safehouse', 'bank']) {

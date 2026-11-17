@@ -1,14 +1,15 @@
-// The law: a wanted level from 0 to 5 stars, foot cops who chase and arrest,
-// police cars that ram, and a helicopter from 4 stars up. Heat rises with
-// crime and cools when the player stays clean and unseen.
-import { POLICE, WANTED, WORLD, CAR } from './config.js';
+// The law: a wanted level from 0 to 5 stars, foot cops who chase and
+// arrest, police cars that ram, and a helicopter from 4 stars up. Heat
+// rises with crime and cools when the player stays clean and unseen.
+import { POLICE, WANTED, WORLD } from './config.js';
 import { createCar } from './vehicles.js';
 import { moveCircle } from './city.js';
 import { hurtPlayer } from './player.js';
 
 export function createCop(x, y) {
   return {
-    x, y,
+    x,
+    y,
     angle: 0,
     radius: 13,
     health: 50,
@@ -17,7 +18,7 @@ export function createCop(x, y) {
   };
 }
 
-function spawnEdgePoint(world) {
+function edgeSpawn(world) {
   // Spawn just outside the camera's view, on a road near the player.
   const p = world.player;
   const angle = world.random.range(0, Math.PI * 2);
@@ -26,7 +27,7 @@ function spawnEdgePoint(world) {
   return { x, y };
 }
 
-function nearestCopDistance(world) {
+function closestLawDistance(world) {
   let best = Infinity;
   for (const cop of world.cops) {
     best = Math.min(best, Math.hypot(cop.x - world.player.x, cop.y - world.player.y));
@@ -38,12 +39,12 @@ function nearestCopDistance(world) {
   return best;
 }
 
-function coolHeat(world) {
-  // Staying clean and out of sight cools the heat down, one star at a time.
+function letHeatFade(world) {
+  // Staying clean and out of sight cools the heat, one star at a time.
   const now = world.time;
   if (world.wanted > 0
     && now - world.lastCrimeAt > WANTED.decaySeconds
-    && nearestCopDistance(world) > WANTED.decayRange) {
+    && closestLawDistance(world) > WANTED.decayRange) {
     world.heat = Math.max(0, world.heat - 1);
     world.wanted = Math.floor(world.heat);
     world.lastCrimeAt = now;
@@ -51,7 +52,7 @@ function coolHeat(world) {
   }
 }
 
-function keepHelicopter(world, dt) {
+function manageHeli(world, dt) {
   // A helicopter at 4 stars keeps the heat on: it never cools while it watches.
   if (world.wanted >= 4 && !world.heli) {
     world.heli = { angle: 0, radius: 150 };
@@ -64,7 +65,7 @@ function keepHelicopter(world, dt) {
   }
 }
 
-function keepNumbersUp(world, dt) {
+function reinforce(world, dt) {
   // Keep the right number of cops on the street for the current heat.
   const wantCops = world.wanted >= 1 ? Math.min(2 + world.wanted, 7) : 0;
   const wantCars = world.wanted >= 2 ? Math.min(world.wanted - 1, 4) : 0;
@@ -72,12 +73,12 @@ function keepNumbersUp(world, dt) {
   if (world.spawnTimer > 0) return;
   world.spawnTimer = POLICE.spawnInterval;
   if (world.cops.length < wantCops) {
-    const at = spawnEdgePoint(world);
+    const at = edgeSpawn(world);
     world.cops.push(createCop(at.x, at.y));
   }
   const policeCars = world.cars.filter((c) => c.kind === 'police' && !c.wrecked).length;
   if (policeCars < wantCars) {
-    const at = spawnEdgePoint(world);
+    const at = edgeSpawn(world);
     const car = createCar(at.x, at.y, world.random.range(0, Math.PI * 2), '#2e5fa3', 'police');
     car.speed = 200;
     world.cars.push(car);
@@ -85,12 +86,32 @@ function keepNumbersUp(world, dt) {
 }
 
 export function updateWanted(world, dt) {
-  coolHeat(world);
-  keepHelicopter(world, dt);
-  keepNumbersUp(world, dt);
+  letHeatFade(world);
+  manageHeli(world, dt);
+  reinforce(world, dt);
   // Sirens while any police is close.
-  const sirenOn = world.wanted > 0 && nearestCopDistance(world) < 900;
+  const sirenOn = world.wanted > 0 && closestLawDistance(world) < 900;
   world.audio.setSiren(sirenOn);
+}
+
+function copShoots(world, cop, dist, dt) {
+  // Shoot from 2 stars up, badly on purpose.
+  if (world.wanted < 2 || dist >= POLICE.footShootRange || world.player.inCar) return;
+  cop.shootCooldown -= dt;
+  if (cop.shootCooldown > 0) return;
+  cop.shootCooldown = POLICE.footShootInterval * (0.8 + world.random.next() * 0.5);
+  const spread = (world.random.next() - 0.5) * 0.35;
+  const a = cop.angle + spread;
+  world.bullets.push({
+    x: cop.x + Math.cos(a) * 20,
+    y: cop.y + Math.sin(a) * 20,
+    vx: Math.cos(a) * 520,
+    vy: Math.sin(a) * 520,
+    damage: 7,
+    from: 'cop',
+    life: 0.8,
+  });
+  world.audio.gunshot();
 }
 
 export function updateCops(world, dt) {
@@ -114,25 +135,7 @@ export function updateCops(world, dt) {
     } else {
       cop.bustTimer = 0;
     }
-    // Shoot from 2 stars up, badly on purpose.
-    if (world.wanted >= 2 && dist < POLICE.footShootRange && !player.inCar) {
-      cop.shootCooldown -= dt;
-      if (cop.shootCooldown <= 0) {
-        cop.shootCooldown = POLICE.footShootInterval * (0.8 + world.random.next() * 0.5);
-        const spread = (world.random.next() - 0.5) * 0.35;
-        const a = cop.angle + spread;
-        world.bullets.push({
-          x: cop.x + Math.cos(a) * 20,
-          y: cop.y + Math.sin(a) * 20,
-          vx: Math.cos(a) * 520,
-          vy: Math.sin(a) * 520,
-          damage: 7,
-          from: 'cop',
-          life: 0.8,
-        });
-        world.audio.gunshot();
-      }
-    }
+    copShoots(world, cop, dist, dt);
   }
   // A cop the player shoots goes down and the heat jumps.
   for (const cop of world.cops) {

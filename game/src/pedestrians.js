@@ -2,9 +2,9 @@
 // from gunfire, explosions and speeding cars. A pedestrian hit by a car is a
 // crime; one shot is a bigger one. They are what makes the city feel alive.
 import { PED_SPEED, PED_FLEE_SPEED, WORLD, BEACH_Y } from './config.js';
-import { moveCircle, nearestRoad, onRoad } from './city.js';
+import { moveCircle, nearestRoad } from './city.js';
 
-const SHIRTS = ['#e67e22', '#3498db', '#9b59b6', '#1abc9c', '#f1c40f', '#e84393', '#95a5a6', '#d35400'];
+const SHIRT_COLORS = ['#e67e22', '#3498db', '#9b59b6', '#1abc9c', '#f1c40f', '#e84393', '#95a5a6', '#d35400'];
 
 export function createPed(random, city) {
   // Spawn on a sidewalk: just off a road line, inside the world.
@@ -19,11 +19,12 @@ export function createPed(random, city) {
     y = road.at + (random.chance(0.5) ? -58 : 58);
   }
   return {
-    x, y,
+    x,
+    y,
     angle: random.range(0, Math.PI * 2),
     radius: 11,
     speed: PED_SPEED * random.range(0.8, 1.2),
-    shirt: random.pick(SHIRTS),
+    shirt: random.pick(SHIRT_COLORS),
     state: 'walk', // 'walk' | 'flee' | 'down'
     stateTime: 0,
     target: null,
@@ -37,7 +38,7 @@ export function spawnPeds(world, count) {
   }
 }
 
-function pickSidewalkTarget(ped, random) {
+function chooseStrollTarget(ped, random) {
   // Walk to a random nearby point on a sidewalk, then re-pick there.
   const road = nearestRoad(ped.x, ped.y);
   if (road.axis === 'x') {
@@ -53,7 +54,7 @@ function pickSidewalkTarget(ped, random) {
 }
 
 // What scares a pedestrian right now, if anything: a shot or a blast nearby.
-function nearbyDanger(world, ped) {
+function threatNear(world, ped) {
   if (world.lastShotAt && world.time - world.lastShotAt < 0.8) {
     const d = Math.hypot(ped.x - world.lastShotX, ped.y - world.lastShotY);
     if (d < 260) return { x: world.lastShotX, y: world.lastShotY };
@@ -71,7 +72,7 @@ export function updatePeds(world, dt) {
       ped.downTimer -= dt;
       continue;
     }
-    const danger = nearbyDanger(world, ped);
+    const danger = threatNear(world, ped);
     if (danger) {
       ped.state = 'flee';
       ped.fleeAngle = Math.atan2(ped.y - danger.y, ped.x - danger.x);
@@ -81,15 +82,22 @@ export function updatePeds(world, dt) {
       const away = ped.fleeAngle ?? 0;
       ped.angle = away;
       moveCircle(world.city, ped, Math.cos(away) * PED_FLEE_SPEED * dt, Math.sin(away) * PED_FLEE_SPEED * dt, false);
-      if (ped.stateTime > 3) { ped.state = 'walk'; ped.stateTime = 0; ped.target = null; }
+      if (ped.stateTime > 3) {
+        ped.state = 'walk';
+        ped.stateTime = 0;
+        ped.target = null;
+      }
       continue;
     }
     // Stroll: pick a sidewalk point, walk to it, pick another.
-    if (!ped.target) ped.target = pickSidewalkTarget(ped, world.random);
+    if (!ped.target) ped.target = chooseStrollTarget(ped, world.random);
     const dx = ped.target.x - ped.x;
     const dy = ped.target.y - ped.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < 10) { ped.target = null; continue; }
+    if (dist < 10) {
+      ped.target = null;
+      continue;
+    }
     ped.angle = Math.atan2(dy, dx);
     moveCircle(world.city, ped, (dx / dist) * ped.speed * dt, (dy / dist) * ped.speed * dt, false);
   }
@@ -98,7 +106,7 @@ export function updatePeds(world, dt) {
   while (world.peds.length < 22) world.peds.push(createPed(world.random, world.city));
 }
 
-/** A car running a pedestrian over: the pedestrian goes down, the law notices. */
+// A car running a pedestrian over: the pedestrian goes down, the law notices.
 export function checkRunOver(world) {
   for (const car of world.cars) {
     if (car.wrecked || Math.abs(car.speed) < 120) continue;
@@ -118,7 +126,7 @@ export function checkRunOver(world) {
   }
 }
 
-/** Bullets hit pedestrians: they go down and it counts as a crime. */
+// Bullets hit pedestrians: they go down and it counts as a crime.
 export function checkBulletHitPed(world, bullet) {
   for (const ped of world.peds) {
     if (ped.state === 'down') continue;

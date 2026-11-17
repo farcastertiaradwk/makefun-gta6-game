@@ -1,13 +1,14 @@
-// Keyboard + mouse input. The game reads a plain state object each frame;
-// the menu screens read edge-triggered actions. Mouse position is kept in
-// screen space and the camera converts it when the game needs an aim point.
+// Keyboard and mouse. The world reads a plain state object every frame;
+// the menu screens read edge-triggered actions. The mouse lives in screen
+// space; the camera turns it into a world aim point when it needs one.
 export const ACTION_CONFIRM = 1;
 export const ACTION_PAUSE = 2;
 export const ACTION_MUTE = 4;
 export const ACTION_INTERACT = 8;
 export const ACTION_RELOAD = 16;
 
-const KEY_TO_ACTION = {
+// Which physical key raises which action bit.
+const ACTION_KEYS = {
   Enter: ACTION_CONFIRM,
   ' ': ACTION_CONFIRM,
   Escape: ACTION_PAUSE,
@@ -21,10 +22,10 @@ const KEY_TO_ACTION = {
   R: ACTION_RELOAD,
 };
 
-// Keys the browser would rather scroll the page with.
-const SCROLL_KEYS = [' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+// Keys that would rather scroll the page than play the game.
+const PAGE_KEYS = [' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
-function normaliseKey(event) {
+function keyName(event) {
   return event.key.length === 1 ? event.key.toLowerCase() : event.key;
 }
 
@@ -38,31 +39,8 @@ export function createInput(canvas) {
     actions: 0,
   };
 
-  window.addEventListener('keydown', (event) => {
-    if (event.repeat) return;
-    down.add(normaliseKey(event));
-    const action = KEY_TO_ACTION[event.key];
-    if (action) state.actions |= action;
-    if (SCROLL_KEYS.includes(event.key)) event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => {
-    down.delete(normaliseKey(event));
-  });
-  canvas.addEventListener('mousemove', (event) => {
-    const rect = canvas.getBoundingClientRect();
-    state.mouseX = event.clientX - rect.left;
-    state.mouseY = event.clientY - rect.top;
-  });
-  canvas.addEventListener('mousedown', (event) => {
-    if (event.button !== 0) return;
-    state.mouseDown = true;
-    state.actions |= ACTION_CONFIRM;
-  });
-  window.addEventListener('mouseup', (event) => {
-    if (event.button === 0) state.mouseDown = false;
-  });
-
   state.held = (key) => down.has(key);
+
   state.axis = () => {
     let x = 0;
     let y = 0;
@@ -72,14 +50,46 @@ export function createInput(canvas) {
     if (down.has('s') || down.has('ArrowDown')) y += 1;
     return { x, y };
   };
+
   state.shift = () => down.has('Shift');
+
   state.takeActions = () => {
     const taken = state.actions;
     state.actions = 0;
     return taken;
   };
-  // Read without consuming: the frame loop peeks for pause/mute/confirm while
-  // the world step is the only consumer of interact/reload.
+
+  // Peek without eating: the frame loop checks pause/mute/confirm while the
+  // world step alone consumes interact and reload.
   state.peekActions = () => state.actions;
+
+  window.addEventListener('keydown', (event) => {
+    if (event.repeat) return;
+    down.add(keyName(event));
+    const action = ACTION_KEYS[event.key];
+    if (action) state.actions |= action;
+    if (PAGE_KEYS.includes(event.key)) event.preventDefault();
+  });
+
+  window.addEventListener('keyup', (event) => {
+    down.delete(keyName(event));
+  });
+
+  canvas.addEventListener('mousemove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    state.mouseX = event.clientX - rect.left;
+    state.mouseY = event.clientY - rect.top;
+  });
+
+  canvas.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
+    state.mouseDown = true;
+    state.actions |= ACTION_CONFIRM;
+  });
+
+  window.addEventListener('mouseup', (event) => {
+    if (event.button === 0) state.mouseDown = false;
+  });
+
   return state;
 }
