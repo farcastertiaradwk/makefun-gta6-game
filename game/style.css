@@ -1,236 +1,68 @@
-/* SOLMAR HEAT — the shell around the canvas.
-   Full-screen game, HUD in the corners, a minimap, and menu screens over
-   the living city. Deliberately flat: no frameworks, no web fonts, nothing
-   fetched over the network. */
+/* SOLMAR HEAT — page chrome around the game canvas. The game itself draws
+   everything on the canvas; this file only centres it on a dark backdrop,
+   keeps it inside the viewport on small screens, and styles the hint line. */
+
+* {
+  box-sizing: border-box;
+}
 
 html,
 body {
   margin: 0;
   padding: 0;
-  height: 100%;
-  overflow: hidden;
-  background: #0e1218;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  min-height: 100%;
+  background: #10140f;
+  color: #f2f2e8;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-#game {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  display: block;
-  touch-action: none;
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Visually hidden live region for screen readers. */
-#status {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.hidden { display: none !important; }
-
-/* ---------- Menu screens: dimmed overlay, centred column ---------- */
-.screen {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
+.stage {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: linear-gradient(180deg, rgba(16, 20, 32, 0.82), rgba(16, 20, 32, 0.68));
-  color: #ffffff;
+  gap: 10px;
+  padding: 18px 12px 26px;
+}
+
+#game {
+  display: block;
+  width: min(1280px, 96vw);
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: #23301f;
+  border: 3px solid #2e3a2a;
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 217, 77, 0.25);
+  cursor: crosshair;
+  outline: none;
+}
+
+#game:focus-visible {
+  border-color: #ffd94d;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6), 0 0 0 3px rgba(255, 217, 77, 0.6);
+}
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: rgba(242, 242, 232, 0.62);
   text-align: center;
 }
-.screen h1 {
-  margin: 0 0 8px;
-  font-size: 64px;
-  letter-spacing: 6px;
-  color: #ffd94d;
-  text-shadow: 0 4px 0 #b3541e, 0 8px 24px rgba(0, 0, 0, 0.6);
-}
-.screen .tagline {
-  margin: 0 0 18px;
-  font-size: 19px;
-  color: #9fd8ff;
-}
-.screen .story {
-  max-width: 620px;
-  margin: 0 0 22px;
-  font-size: 16px;
-  line-height: 1.55;
-  color: #e8e8e8;
-}
-.screen .controls {
-  margin-top: 22px;
-  font-size: 13px;
-  color: #b9c4d0;
-}
-.buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: center;
-}
-.buttons button {
-  padding: 12px 26px;
-  border: 2px solid #ffd94d;
-  border-radius: 4px;
-  background: #1c2333;
-  color: #ffd94d;
-  font-size: 17px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.buttons button:hover {
-  background: #ffd94d;
-  color: #1c2333;
-}
-.buttons button:focus-visible {
-  outline: 3px solid #ffffff;
-  outline-offset: 2px;
-}
 
-/* ---------- HUD: pointer-transparent, four corners plus centre lines ---------- */
-#hud {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  color: #ffffff;
-  z-index: 5;
-}
-body:not(.playing) #hud { display: none; }
-
-#hud-top-left {
-  position: absolute;
-  top: 14px;
-  left: 16px;
-}
-#hud-stars {
-  font-size: 26px;
-  letter-spacing: 4px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
-}
-.bar {
-  width: 190px;
-  height: 12px;
-  margin-top: 6px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-}
-.bar.armor { height: 7px; }
-#hud-health-fill {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #e74c3c, #ff6b5a);
-}
-#hud-armor-fill {
-  height: 100%;
-  width: 0%;
-  background: linear-gradient(90deg, #3498db, #6ab0e8);
-}
-
-#hud-top-right {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  text-align: right;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
-}
-#hud-cash {
-  font-size: 26px;
-  font-weight: 800;
-  color: #7dff8a;
-}
-#hud-mission {
-  margin-top: 4px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: #ffd94d;
-}
-#hud-objective {
-  max-width: 420px;
-  margin-top: 2px;
-  font-size: 14px;
-}
-#hud-timer {
-  margin-top: 2px;
-  font-size: 16px;
-  font-weight: 700;
-  color: #ff9a5a;
-}
-
-#hud-bottom-left {
-  position: absolute;
-  left: 16px;
-  bottom: 16px;
-}
-#minimap {
-  border: 2px solid rgba(255, 255, 255, 0.65);
-  background: #6f9c4e;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-#hud-bottom-right {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  text-align: right;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
-}
-#hud-ammo {
-  font-size: 20px;
-  font-weight: 700;
-}
-#hud-speed {
-  font-size: 22px;
-  font-weight: 800;
-  color: #ffd94d;
-}
-
-#hud-message {
-  position: absolute;
-  left: 50%;
-  top: 18%;
-  max-width: 700px;
-  transform: translateX(-50%);
-  font-size: 20px;
-  font-weight: 700;
-  text-align: center;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
-  transition: opacity 0.3s;
-}
-#hud-prompt {
-  position: absolute;
-  left: 50%;
-  bottom: 15%;
-  transform: translateX(-50%);
-  font-size: 16px;
-  font-weight: 700;
-  color: #ffd94d;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
-}
-
-/* ---------- Small screens: shrink the title and the HUD ---------- */
 @media (max-width: 700px) {
-  .screen h1 {
-    font-size: 40px;
-    letter-spacing: 3px;
+  .stage {
+    padding: 10px 6px 18px;
   }
-  .screen .story { font-size: 14px; }
-  #hud-stars { font-size: 20px; }
-  #hud-cash { font-size: 20px; }
-  .bar { width: 130px; }
-  #minimap {
-    width: 160px;
-    height: 116px;
+
+  .hint {
+    font-size: 11px;
+    max-width: 92vw;
   }
 }

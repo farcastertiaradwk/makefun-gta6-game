@@ -1,259 +1,278 @@
-// The story: six missions for Mara Voss and the Harbour Crew, from stealing
-// a first car to taking the city from Kane. Each mission sets its own
-// objective, marker and timer; the main loop reads missionStatus and ends
-// the mission.
-import { SITES, PRICES } from './config.js';
-import { slideCircle } from './city.js';
+// The story of SOLMAR HEAT: six jobs for Danny Reyes, wheelman out of work,
+// taking orders from Mara Voss and the Harbour Crew until he stands at the
+// top of Solmar. Each mission is a small state machine — stages with an
+// objective line, a map marker, and a condition that moves it on. The
+// driver (and the staged screenshots) can jump to any mission with
+// startMission; in normal play they chain through the mission-complete
+// screen. Rewards are paid on completion, except the bank job, where the
+// safe itself pays out.
 
-function defineJob(name, briefing, rewardIndex) {
-  return { name, briefing, reward: PRICES.missionReward[rewardIndex] };
-}
+import { MISSIONS, PLACES, WORLD } from './config.js';
+import { dist } from './random.js';
+import { floatText } from './effects.js';
+import { setWanted } from './police.js';
 
-export const STORY = [
-  defineJob('Wheels', 'Mara: every crew needs wheels. Steal a car — any car — and bring it to The Docks.', 0),
-  defineJob('The Package', 'Three packages stashed around Solmar. Grab them all and bring them to the Fix-It Garage. Fast.', 1),
-  defineJob('Getaway Driver', 'Mara needs a ride to the Safehouse and the law is already on her. Drive her there. Keep the car alive.', 2),
-  defineJob('Payback', 'The Vipers jumped one of ours in the Plaza. Four of them. Make it even.', 3),
-  defineJob('The Score', 'Harbor Bank. Crack the safe, take the money, and get to the Garage before the whole city shows up.', 4),
-  defineJob('King of Solmar', 'Kane runs this city. End him in the Plaza, then get to Lighthouse Point while every cop in Solmar hunts you.', 5),
+/** The six jobs: name, brief for the title card, and reward. */
+export const MISSION_LIST = [
+  { name: 'Wheels', brief: 'Mara needs a wheelman. Steal a car and bring it to The Docks.', reward: 200 },
+  { name: 'The Package', brief: 'Three packages are stashed around Solmar. Collect them all — 180 seconds.', reward: 250 },
+  { name: 'Getaway Driver', brief: 'Drive Mara to the Safehouse. The whole city is watching: three stars.', reward: 300 },
+  { name: 'The Fix', brief: 'Shake the tail, then get the car to the Fix-It Garage.', reward: 200 },
+  { name: 'Bank Score', brief: 'Crack the Harbor Bank safe. Hold E on the vault — then run.', reward: 0 },
+  { name: 'King of Solmar', brief: 'Kane and his Vipers hold the plaza. End it.', reward: 500 },
 ];
 
-function distance(ax, ay, bx, by) {
-  return Math.hypot(ax - bx, ay - by);
+/** Package stashes for mission 2: fixed spots around the city. */
+const PACKAGE_SPOTS = [
+  { x: 1000, y: 600 },
+  { x: 1800, y: 1400 },
+  { x: 600, y: 1800 },
+];
+
+/** Health and ammo pickups placed around the city at the start. */
+const SUPPLY_SPOTS = [
+  { x: 600, y: 1000, kind: 'health' },
+  { x: 1400, y: 600, kind: 'ammo' },
+  { x: 1800, y: 1800, kind: 'health' },
+  { x: 1000, y: 1400, kind: 'ammo' },
+  { x: 2200, y: 1000, kind: 'health' },
+  { x: 600, y: 2200, kind: 'ammo' },
+];
+
+/** Put the fixed supply pickups on the map. */
+export function placeSupplies(world) {
+  for (const s of SUPPLY_SPOTS) {
+    world.pickups.push({ x: s.x, y: s.y, kind: s.kind });
+  }
 }
 
-function makeFoe(world, x, y, boss) {
-  const enemy = {
-    x,
-    y,
-    angle: 0,
-    radius: 14,
-    health: boss ? 320 : 55,
-    boss: !!boss,
-    shootCooldown: world.random.between(0.5, 1.5),
-    name: boss ? 'KANE' : 'VIPER',
-  };
-  world.enemies.push(enemy);
-  return enemy;
-}
-
-const VIPER_POSTS = [[800, 750], [900, 800], [820, 830], [880, 720]];
-
-function spawnCrew(world) {
-  for (const [x, y] of VIPER_POSTS) makeFoe(world, x, y, false);
-}
-
-function setObjective(world, text, marker) {
-  world.mission.objective = text;
-  if (marker) world.mission.marker = marker;
-}
-
-export function beginJob(world, index) {
-  const m = {
-    index,
+/** Begin mission i (0-based). Resets the mission state and stages its scene. */
+export function startMission(world, i) {
+  const def = MISSION_LIST[i];
+  if (!def) return;
+  world.mission = {
+    index: i,
     stage: 0,
-    timer: 0,
-    progress: 0,
     status: 'active',
-    reason: '',
+    objective: '',
+    timer: 0,
+    data: { collected: 0, crack: 0 },
   };
-  world.mission = m;
-  world.enemies = [];
-  if (index === 1) {
-    // Three packages: plaza, park, harbour gate. Clear any left from a retry.
-    world.pickups = world.pickups.filter((p) => p.kind !== 'package');
-    world.pickups.push(
-      { x: 850, y: 700, kind: 'package', taken: false },
-      { x: 1250, y: 1050, kind: 'package', taken: false },
-      { x: 2350, y: 500, kind: 'package', taken: false },
-    );
-    m.timer = 180;
-    setObjective(world, 'Collect the packages: 0/3', { x: 850, y: 700, label: 'PACKAGE' });
-  } else if (index === 2) {
-    setObjective(world, 'Get in a car — Mara is waiting', { x: world.player.x, y: world.player.y, label: 'YOU' });
-  } else if (index === 3) {
-    spawnCrew(world);
-    setObjective(world, 'Take out the Vipers: 0/4', { x: SITES.plaza.x, y: SITES.plaza.y, label: 'PLAZA' });
-  } else if (index === 4) {
-    setObjective(world, 'Get to Harbor Bank', { x: SITES.bank.x, y: SITES.bank.y, label: 'BANK' });
-  } else if (index === 5) {
-    makeFoe(world, 850, 775, true);
-    spawnCrew(world);
-    setObjective(world, 'Take down KANE', { x: SITES.plaza.x, y: SITES.plaza.y, label: 'KANE' });
-  } else {
-    setObjective(world, 'Steal a car and drive to The Docks', { x: SITES.docks.x, y: SITES.docks.y, label: 'DOCKS' });
-  }
-  return m;
-}
-
-function finishJob(world, text) {
-  world.mission.status = 'complete';
-  world.mission.reason = text;
-}
-
-function failJob(world, text) {
-  world.mission.status = 'failed';
-  world.mission.reason = text;
-}
-
-function jobWheels(world) {
   const m = world.mission;
-  const player = world.player;
-  if (player.inCar && distance(player.x, player.y, SITES.docks.x, SITES.docks.y) < 80) {
-    finishJob(world, 'Wheels delivered.');
-  } else if (!player.inCar) {
-    m.objective = 'Steal a car and drive to The Docks';
-  } else {
-    m.objective = 'Drive to The Docks';
+  // Test hooks and chaining revive the player so a mission always starts alive.
+  world.player.health = Math.max(world.player.health, 100);
+  world.screen = 'play';
+  if (i === 0) {
+    m.objective = 'Steal a car';
+    world.marker = null;
+  } else if (i === 1) {
+    m.timer = MISSIONS.packageTime;
+    m.objective = 'Collect the packages: 0/3';
+    for (const s of PACKAGE_SPOTS) {
+      world.pickups.push({ x: s.x, y: s.y, kind: 'package' });
+    }
+    world.marker = { x: PACKAGE_SPOTS[0].x, y: PACKAGE_SPOTS[0].y };
+  } else if (i === 2) {
+    setWanted(world, 3);
+    m.objective = 'Drive Mara to the Safehouse';
+    world.marker = { x: PLACES.safehouse.x + 60, y: PLACES.safehouse.y + 45 };
+    world.maraRiding = true;
+  } else if (i === 3) {
+    m.objective = 'Lose the cops';
+    world.marker = null;
+  } else if (i === 4) {
+    m.objective = 'Reach the Harbor Bank';
+    world.marker = { x: world.city.bankSafe.x, y: world.city.bankSafe.y };
+  } else if (i === 5) {
+    m.objective = 'Take down KANE';
+    const plaza = PLACES.plaza;
+    world.enemies.push({
+      x: plaza.x, y: plaza.y, health: MISSIONS.kaneHealth, boss: true, name: 'KANE',
+      speed: 120, shootTimer: 1, angle: 0,
+    });
+    for (let k = 0; k < MISSIONS.viperCount; k += 1) {
+      const a = (k / MISSIONS.viperCount) * Math.PI * 2;
+      world.enemies.push({
+        x: plaza.x + Math.cos(a) * 120,
+        y: plaza.y + Math.sin(a) * 120,
+        health: MISSIONS.enemyHealth, boss: false, name: 'Viper',
+        speed: 135, shootTimer: 1 + k * 0.3, angle: 0,
+      });
+    }
+    world.marker = { x: plaza.x, y: plaza.y };
   }
+  world.audio.sting();
 }
 
-function jobPackages(world) {
-  const m = world.mission;
-  const player = world.player;
-  const got = world.pickups.filter((p) => p.kind === 'package' && p.taken).length;
-  m.objective = `Collect the packages: ${got}/3`;
-  const remaining = world.pickups.find((p) => p.kind === 'package' && !p.taken);
-  m.marker = remaining
-    ? { x: remaining.x, y: remaining.y, label: 'PACKAGE' }
-    : { x: SITES.garage.x, y: SITES.garage.y, label: 'GARAGE' };
-  if (got === 3) {
-    if (distance(player.x, player.y, SITES.garage.x, SITES.garage.y) < 80) {
-      finishJob(world, 'Packages delivered.');
-    } else {
-      m.objective = 'All packages collected — deliver to the Garage';
-    }
-  }
-}
-
-function jobGetaway(world) {
-  const m = world.mission;
-  const player = world.player;
-  if (m.stage === 0) {
-    if (player.inCar) {
-      m.stage = 1;
-      world.setWanted(2);
-      world.showMessage('Mara is in. The cops are on you — drive!');
-      setObjective(world, 'Drive Mara to the Safehouse', { x: SITES.safehouse.x, y: SITES.safehouse.y, label: 'SAFEHOUSE' });
-    }
-  } else if (player.inCar) {
-    if (player.inCar.health < 25) {
-      failJob(world, 'The car fell apart.');
-      return;
-    }
-    if (distance(player.x, player.y, SITES.safehouse.x, SITES.safehouse.y) < 80) {
-      finishJob(world, 'Mara is safe.');
-    }
-  } else {
-    failJob(world, 'You left the car — Mara walked away.');
-  }
-}
-
-function jobShootout(world) {
-  const m = world.mission;
-  const player = world.player;
-  const alive = world.enemies.filter((e) => e.health > 0);
-  const total = m.index === 3 ? 4 : 5;
-  const down = total - alive.length;
-  if (m.index === 3) {
-    m.objective = `Take out the Vipers: ${down}/4`;
-    if (alive.length === 0) finishJob(world, 'Payback delivered.');
-    return;
-  }
-  if (m.stage === 0) {
-    const boss = world.enemies.find((e) => e.boss);
-    m.objective = boss && boss.health > 0 ? 'Take down KANE' : 'Kane is down — get to Lighthouse Point';
-    if (boss && boss.health <= 0) {
-      m.stage = 1;
-      world.setWanted(4);
-      world.showMessage('Kane is down! Every cop in Solmar is coming — run!');
-      m.marker = { x: SITES.lighthouse.x, y: SITES.lighthouse.y, label: 'LIGHTHOUSE' };
-    }
-  } else if (distance(player.x, player.y, SITES.lighthouse.x, SITES.lighthouse.y) < 90) {
-    finishJob(world, 'You own Solmar now.');
-  }
-}
-
-function jobHeist(world, dt) {
-  const m = world.mission;
-  const player = world.player;
-  if (m.stage === 0) {
-    if (distance(player.x, player.y, SITES.bank.x, SITES.bank.y) < 70) {
-      m.stage = 1;
-      m.progress = 0;
-      m.objective = 'Hold E — crack the safe';
-    }
-  } else if (m.stage === 1) {
-    if (distance(player.x, player.y, SITES.bank.x, SITES.bank.y) > 110) {
-      m.stage = 0;
-      m.progress = 0;
-      m.objective = 'Get to Harbor Bank';
-      m.marker = { x: SITES.bank.x, y: SITES.bank.y, label: 'BANK' };
-    } else if (world.interactHeld) {
-      m.progress += dt / 5;
-      m.objective = `Cracking the safe… ${Math.floor(m.progress * 100)}%`;
-      if (m.progress >= 1) {
-        m.stage = 2;
-        world.setWanted(3);
-        world.cash += 800;
-        world.showMessage('Safe cracked! $800 — now lose the cops and get to the Garage!');
-        setObjective(world, 'Escape to the Fix-It Garage', { x: SITES.garage.x, y: SITES.garage.y, label: 'GARAGE' });
-      }
-    } else {
-      m.objective = 'Hold E — crack the safe';
-    }
-  } else if (distance(player.x, player.y, SITES.garage.x, SITES.garage.y) < 80) {
-    finishJob(world, 'Clean getaway.');
-  }
-}
-
-// One handler per mission, looked up by index instead of chained ifs.
-const JOB_HANDLERS = [jobWheels, jobPackages, jobGetaway, jobShootout, jobHeist, jobShootout];
-
-export function stepJob(world, dt) {
+/** The mission is done: pay out, count it, and show the complete screen. */
+export function completeMission(world) {
   const m = world.mission;
   if (!m || m.status !== 'active') return;
-  if (m.timer > 0) {
-    m.timer -= dt;
-    if (m.timer <= 0) {
-      failJob(world, 'Out of time.');
-      return;
-    }
+  m.status = 'done';
+  const def = MISSION_LIST[m.index];
+  world.cash += def.reward;
+  world.missionsDone = (world.missionsDone || 0) + 1;
+  world.marker = null;
+  world.maraRiding = false;
+  if (def.reward > 0) floatText(world, world.player.x, world.player.y - 24, `+$${def.reward}`, '#7be382');
+  world.audio.coin();
+  if (m.index === 5) {
+    world.screen = 'victory';
+    world.audio.sting();
+  } else {
+    world.screen = 'missionComplete';
   }
-  JOB_HANDLERS[m.index](world, dt);
 }
 
-// Rivals shoot at the player when close, and strafe to keep their distance.
-export function stepFoes(world, dt) {
-  const player = world.player;
-  for (const enemy of world.enemies) {
-    if (enemy.health <= 0) continue;
-    const dx = player.x - enemy.x;
-    const dy = player.y - enemy.y;
-    const distTo = Math.hypot(dx, dy);
-    enemy.angle = Math.atan2(dy, dx);
-    if (distTo > 260) {
-      slideCircle(world.city, enemy, (dx / distTo) * 110 * dt, (dy / distTo) * 110 * dt, false);
-    } else if (distTo < 140) {
-      slideCircle(world.city, enemy, -(dx / distTo) * 60 * dt, -(dy / distTo) * 60 * dt, false);
+/** The mission failed (timer ran out): offer a retry. */
+export function failMission(world, reason) {
+  const m = world.mission;
+  if (!m || m.status !== 'active') return;
+  m.status = 'failed';
+  m.failReason = reason || 'The job fell apart.';
+  world.marker = null;
+  world.maraRiding = false;
+  world.screen = 'missionFailed';
+  world.audio.fail();
+}
+
+/** Move to the next mission after the complete screen. */
+export function nextMission(world) {
+  const next = (world.mission ? world.mission.index : 0) + 1;
+  if (next >= MISSION_LIST.length) {
+    world.screen = 'victory';
+    return;
+  }
+  startMission(world, next);
+}
+
+/** Retry the failed mission from its start. */
+export function retryMission(world) {
+  const i = world.mission ? world.mission.index : 0;
+  startMission(world, i);
+}
+
+/** Per-mission stage logic, run once per frame while a mission is active. */
+export function updateMission(world, dt) {
+  const m = world.mission;
+  if (!m || m.status !== 'active') return;
+  const p = world.player;
+  if (m.index === 0) {
+    if (m.stage === 0 && p.inCar) {
+      m.stage = 1;
+      m.objective = 'Drive to The Docks';
+      world.marker = { x: PLACES.docks.x, y: PLACES.docks.y };
+    } else if (m.stage === 1 && dist(p.x, p.y, PLACES.docks.x, PLACES.docks.y) < 130) {
+      completeMission(world);
     }
-    enemy.shootCooldown -= dt;
-    if (distTo < 420 && enemy.shootCooldown <= 0) {
-      enemy.shootCooldown = enemy.boss ? 0.55 : 1.1;
-      const spread = (world.random.draw() - 0.5) * 0.22;
-      const a = enemy.angle + spread;
-      world.bullets.push({
-        x: enemy.x + Math.cos(a) * 20,
-        y: enemy.y + Math.sin(a) * 20,
-        vx: Math.cos(a) * 540,
-        vy: Math.sin(a) * 540,
-        damage: enemy.boss ? 14 : 9,
-        from: 'enemy',
-        life: 0.9,
-      });
-      world.audio.gunshot();
+  } else if (m.index === 1) {
+    m.timer -= dt;
+    if (m.data.collected >= MISSIONS.packageCount) {
+      completeMission(world);
+      return;
+    }
+    if (m.timer <= 0) {
+      failMission(world, 'Time ran out — the packages moved on.');
+      return;
+    }
+    // Point the marker at the nearest uncollected package.
+    let best = null;
+    let bestD = Infinity;
+    for (const pk of world.pickups) {
+      if (pk.kind !== 'package') continue;
+      const d = dist(p.x, p.y, pk.x, pk.y);
+      if (d < bestD) {
+        bestD = d;
+        best = pk;
+      }
+    }
+    world.marker = best ? { x: best.x, y: best.y } : null;
+  } else if (m.index === 2) {
+    const sh = PLACES.safehouse;
+    if (p.inCar && dist(p.x, p.y, sh.x + 60, sh.y + 45) < 120) {
+      completeMission(world);
+    }
+  } else if (m.index === 3) {
+    if (m.stage === 0 && world.wanted === 0) {
+      m.stage = 1;
+      m.objective = 'Reach the Fix-It Garage';
+      world.marker = { x: PLACES.garage.x + 70, y: PLACES.garage.y + 50 };
+    } else if (m.stage === 1) {
+      const g = PLACES.garage;
+      if (dist(p.x, p.y, g.x + 70, g.y + 50) < 120) {
+        completeMission(world);
+      }
+    }
+  } else if (m.index === 4) {
+    const safe = world.city.bankSafe;
+    if (m.stage === 0) {
+      if (dist(p.x, p.y, safe.x, safe.y) < 130) {
+        m.stage = 1;
+        m.objective = 'Crack the safe — hold E';
+        world.marker = { x: safe.x, y: safe.y };
+      }
+    } else if (m.stage === 1) {
+      const holding = world.input.isDown(['KeyE']) && dist(p.x, p.y, safe.x, safe.y) < 100 && !p.inCar;
+      if (holding) {
+        const before = Math.floor(m.data.crack / 20);
+        m.data.crack += (dt / MISSIONS.safeCrackSeconds) * 100;
+        if (Math.floor(m.data.crack / 20) > before) world.audio.tone(880, 0.05, 'square', 0.05);
+        if (m.data.crack >= 100) {
+          m.data.crack = 100;
+          world.cash += MISSIONS.safePayout;
+          floatText(world, safe.x, safe.y - 30, `+$${MISSIONS.safePayout}`, '#7be382');
+          setWanted(world, 3);
+          m.stage = 2;
+          m.objective = 'Escape to the Fix-It Garage';
+          world.marker = { x: PLACES.garage.x + 70, y: PLACES.garage.y + 50 };
+          world.audio.coin();
+        }
+      }
+    } else if (m.stage === 2) {
+      const g = PLACES.garage;
+      if (dist(p.x, p.y, g.x + 70, g.y + 50) < 120) {
+        completeMission(world);
+      }
+    }
+  } else if (m.index === 5) {
+    const alive = world.enemies.filter((e) => e.health > 0).length;
+    if (alive === 0) {
+      completeMission(world);
+      return;
+    }
+    // Enemies hunt the player: walk closer and shoot.
+    for (const e of world.enemies) {
+      if (e.health <= 0) continue;
+      const d = dist(e.x, e.y, p.x, p.y);
+      e.angle = Math.atan2(p.y - e.y, p.x - e.x);
+      if (d > 130) {
+        e.x += Math.cos(e.angle) * e.speed * dt;
+        e.y += Math.sin(e.angle) * e.speed * dt;
+      }
+      e.shootTimer -= dt;
+      if (e.shootTimer <= 0 && d < 520) {
+        e.shootTimer = e.boss ? 1.5 : 1.9;
+        const a = Math.atan2(p.y - e.y, p.x - e.x) + world.rng.range(-0.1, 0.1);
+        world.bullets.push({
+          x: e.x + Math.cos(a) * 18,
+          y: e.y + Math.sin(a) * 18,
+          vx: Math.cos(a) * 480,
+          vy: Math.sin(a) * 480,
+          travelled: 0,
+          range: 560,
+          damage: e.boss ? 12 : 8,
+          fromPlayer: false,
+        });
+        world.audio.shot();
+      }
     }
   }
-  // The dead stay in the list (lying down) until the mission ends: the
-  // mission counts the living, and the boss check needs the body to find.
+}
+
+/** The short objective line the HUD prints under the mission name. */
+export function missionTitle(world) {
+  const m = world.mission;
+  if (!m) return '';
+  const def = MISSION_LIST[m.index];
+  return `${m.index + 1}/6 ${def.name}`;
 }

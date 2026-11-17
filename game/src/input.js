@@ -1,100 +1,154 @@
-// Keyboard and mouse, reduced to what the game needs: which keys are held
-// down, which action keys were tapped since the last frame, and where the
-// mouse points. Taps are edge-triggered — a tap is consumed exactly once —
-// and the frame loop, not the world, owns pause, mute and confirm, so the
-// world only ever sees interact and reload.
+// Keyboard + mouse input for SOLMAR HEAT.
+// One object owns every key and the mouse. The game loop reads it once per
+// frame: held keys for movement, edge-triggered presses for actions (E, R,
+// Esc, Enter, M), and the mouse position for aiming plus clicks for firing.
+// Edge presses are consumed by the loop and cleared at the end of each frame
+// so a single keypress never fires twice.
 
-export const KEY_CONFIRM = 1;
-export const KEY_PAUSE = 2;
-export const KEY_MUTE = 4;
-export const KEY_INTERACT = 8;
-export const KEY_RELOAD = 16;
+import { KEYS } from './config.js';
 
-// Which physical key raises which action bit. Checked against event.key,
-// so shift-letter variants count too.
-const KEY_ACTIONS = {
-  Enter: KEY_CONFIRM,
-  ' ': KEY_CONFIRM,
-  Escape: KEY_PAUSE,
-  p: KEY_PAUSE,
-  P: KEY_PAUSE,
-  m: KEY_MUTE,
-  M: KEY_MUTE,
-  e: KEY_INTERACT,
-  E: KEY_INTERACT,
-  r: KEY_RELOAD,
-  R: KEY_RELOAD,
-};
-
-// Keys that would rather scroll the page than play the game.
-const SCROLL_KEYS = [' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-
-function normalizeKey(event) {
-  return event.key.length === 1 ? event.key.toLowerCase() : event.key;
-}
+/** All codes the game listens to, so the page never scrolls mid-game. */
+const GAME_CODES = new Set([
+  ...KEYS.up,
+  ...KEYS.down,
+  ...KEYS.left,
+  ...KEYS.right,
+  ...KEYS.sprint,
+  ...KEYS.handbrake,
+  ...KEYS.interact,
+  ...KEYS.reload,
+  ...KEYS.pause,
+  ...KEYS.mute,
+  ...KEYS.start,
+]);
 
 export function makeInput(canvas) {
-  const down = new Set();
-  const state = {
-    keys: down,
-    mouseX: 0,
-    mouseY: 0,
-    mouseDown: false,
-    actions: 0,
-  };
+  const held = new Set();
+  const pressed = new Set();
+  const mouse = { x: 640, y: 360, down: false, clicked: false, clickX: 640, clickY: 360 };
+  let attached = false;
 
-  state.held = (key) => down.has(key);
-
-  // Raw WASD/arrows vector, unnormalised — the player normalises it.
-  state.axis = () => {
-    let x = 0;
-    let y = 0;
-    if (down.has('a') || down.has('ArrowLeft')) x -= 1;
-    if (down.has('d') || down.has('ArrowRight')) x += 1;
-    if (down.has('w') || down.has('ArrowUp')) y -= 1;
-    if (down.has('s') || down.has('ArrowDown')) y += 1;
-    return { x, y };
-  };
-
-  state.shift = () => down.has('Shift');
-
-  state.takeActions = () => {
-    const taken = state.actions;
-    state.actions = 0;
-    return taken;
-  };
-
-  // Peek without eating: the frame loop checks pause/mute/confirm while the
-  // world step alone consumes interact and reload.
-  state.peekActions = () => state.actions;
-
-  window.addEventListener('keydown', (event) => {
-    if (event.repeat) return;
-    down.add(normalizeKey(event));
-    const action = KEY_ACTIONS[event.key];
-    if (action) state.actions |= action;
-    if (SCROLL_KEYS.includes(event.key)) event.preventDefault();
-  });
-
-  window.addEventListener('keyup', (event) => {
-    down.delete(normalizeKey(event));
-  });
-
-  canvas.addEventListener('mousemove', (event) => {
+  function toCanvas(event) {
     const rect = canvas.getBoundingClientRect();
-    state.mouseX = event.clientX - rect.left;
-    state.mouseY = event.clientY - rect.top;
-  });
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }
 
-  canvas.addEventListener('mousedown', (event) => {
-    if (event.button !== 0) return;
-    state.mouseDown = true;
-    state.actions |= KEY_CONFIRM;
-  });
+  function onKeyDown(event) {
+    if (!GAME_CODES.has(event.code)) return;
+    event.preventDefault();
+    if (!held.has(event.code)) pressed.add(event.code);
+    held.add(event.code);
+  }
 
-  window.addEventListener('mouseup', (event) => {
-    if (event.button === 0) state.mouseDown = false;
-  });
+  function onKeyUp(event) {
+    held.delete(event.code);
+  }
 
-  return state;
+  function onMouseMove(event) {
+    const p = toCanvas(event);
+    mouse.x = p.x;
+    mouse.y = p.y;
+  }
+
+  function onMouseDown(event) {
+    const p = toCanvas(event);
+    mouse.x = p.x;
+    mouse.y = p.y;
+    mouse.down = true;
+    mouse.clicked = true;
+    mouse.clickX = p.x;
+    mouse.clickY = p.y;
+  }
+
+  function onMouseUp() {
+    mouse.down = false;
+  }
+
+  function onBlur() {
+    held.clear();
+    mouse.down = false;
+  }
+
+  function attach() {
+    if (attached) return;
+    attached = true;
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    canvas.addEventListener('mousemove', onMouseMove);
+    canvas.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mouseup', onMouseUp);
+  }
+
+  /** True while any of the codes is held down. */
+  function isDown(codes) {
+    for (const c of codes) if (held.has(c)) return true;
+    return false;
+  }
+
+  /** True if any of the codes was pressed since the last frame clear. */
+  function wasPressed(codes) {
+    for (const c of codes) if (pressed.has(c)) return true;
+    return false;
+  }
+
+  /** Consume a press so it does not fire again this frame. */
+  function consume(codes) {
+    for (const c of codes) pressed.delete(c);
+  }
+
+  /** Call at the end of every frame: edges live exactly one frame. */
+  function endFrame() {
+    pressed.clear();
+    mouse.clicked = false;
+  }
+
+  /** Test / staging helper: pretend a key is held. */
+  function fakeHold(code) {
+    held.add(code);
+  }
+
+  /** Test / staging helper: release a faked key. */
+  function fakeRelease(code) {
+    held.delete(code);
+  }
+
+  /** Test / staging helper: clear every held key. */
+  function fakeClear() {
+    held.clear();
+    pressed.clear();
+  }
+
+  return {
+    held,
+    pressed,
+    mouse,
+    attach,
+    isDown,
+    wasPressed,
+    consume,
+    endFrame,
+    fakeHold,
+    fakeRelease,
+    fakeClear,
+  };
+}
+
+/** Movement vector from the held keys, normalised. */
+export function moveVector(input) {
+  let x = 0;
+  let y = 0;
+  if (input.isDown(KEYS.left)) x -= 1;
+  if (input.isDown(KEYS.right)) x += 1;
+  if (input.isDown(KEYS.up)) y -= 1;
+  if (input.isDown(KEYS.down)) y += 1;
+  if (x !== 0 && y !== 0) {
+    const inv = 1 / Math.sqrt(2);
+    x *= inv;
+    y *= inv;
+  }
+  return { x, y };
 }

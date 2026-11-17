@@ -1,145 +1,160 @@
-// Pedestrians: they stroll the sidewalks, cross at intersections, and run
-// from gunfire, explosions and speeding cars. A pedestrian hit by a car is a
-// crime; one shot is a bigger one. They are what makes the city feel alive.
-import { STROLL, PANIC, MAP, SHORE_Y } from './config.js';
-import { slideCircle, closestRoad } from './city.js';
+// Pedestrians for SOLMAR HEAT: the people of Solmar.
+// They stroll the sidewalks, pause at corners to look around, and run when
+// something scary happens nearby — a gunshot, an explosion, or a car
+// bearing down on them. A ped who is run over stays down for a few seconds
+// and then gets up and walks away (the city keeps living), and new peds
+// wander in to keep the streets full.
 
-const SHIRTS = ['#e67e22', '#3498db', '#9b59b6', '#1abc9c', '#f1c40f', '#e84393', '#95a5a6', '#d35400'];
+import { PEDS, WORLD } from './config.js';
+import { clamp, dist } from './random.js';
 
-export function makePed(random, city) {
-  // Spawn on a sidewalk: just off a road line, inside the world.
-  const road = closestRoad(random.between(120, MAP.w - 120), random.between(120, SHORE_Y - 60));
-  let x;
-  let y;
-  if (road.axis === 'x') {
-    x = road.at + (random.maybe(0.5) ? -58 : 58);
-    y = random.between(120, SHORE_Y - 60);
-  } else {
-    x = random.between(120, MAP.w - 120);
-    y = road.at + (random.maybe(0.5) ? -58 : 58);
-  }
+const SHIRT_COLORS = ['#e86a5a', '#5a8de8', '#e8c85a', '#7ac05a', '#c05ab8', '#e8e8e8', '#5ac0c0', '#e89a4a'];
+
+/** Fresh ped standing on a sidewalk near a road. */
+export function makePed(world, x, y) {
   return {
     x,
     y,
-    angle: random.between(0, Math.PI * 2),
-    radius: 11,
-    speed: STROLL * random.between(0.8, 1.2),
-    shirt: random.choose(SHIRTS),
-    state: 'walk', // 'walk' | 'flee' | 'down'
-    stateTime: 0,
-    target: null,
-    downTimer: 0,
+    angle: world.rng.range(0, Math.PI * 2),
+    speed: world.rng.range(PEDS.walkMin, PEDS.walkMax),
+    state: 'walk',
+    /** Seconds left in the current wait or flee. */
+    stateTime: world.rng.range(1, 4),
+    /** Direction to run in while fleeing; stored on the ped so the flee
+     *  branch never reads a danger that has already gone. */
+    fleeAngle: 0,
+    fleeTime: 0,
+    down: false,
+    downTime: 0,
+    color: world.rng.choose(SHIRT_COLORS),
+    walkPhase: world.rng.range(0, Math.PI * 2),
   };
 }
 
-export function spawnWalkers(world, count) {
+/** Fill the sidewalks with walkers, in RNG stream order. */
+export function spawnPeds(world, count) {
   for (let i = 0; i < count; i += 1) {
-    world.peds.push(makePed(world.random, world.city));
+    const road = world.rng.choose(world.city.roads);
+    const vertical = world.rng.maybe(0.5);
+    const along = world.rng.range(100, WORLD.size - 100);
+    const side = world.rng.maybe(0.5) ? 1 : -1;
+    const off = WORLD.roadWidth / 2 + 12;
+    const x = vertical ? road + side * off : along;
+    const y = vertical ? along : road + side * off;
+    world.peds.push(makePed(world, x, y));
   }
 }
 
-function strollTarget(ped, random) {
-  // Walk to a random nearby point on a sidewalk, then re-pick there.
-  const road = closestRoad(ped.x, ped.y);
-  if (road.axis === 'x') {
-    return {
-      x: road.at + (ped.x < road.at ? -58 : 58),
-      y: Math.max(100, Math.min(SHORE_Y - 40, ped.y + random.between(-320, 320))),
-    };
+/** The nearest thing that should scare this ped, or null. */
+function dangerNear(world, ped) {
+  // A live bullet whistling past.
+  for (const b of world.bullets) {
+    if (dist(ped.x, ped.y, b.x, b.y) < PEDS.scareRadius) return { x: b.x, y: b.y };
   }
-  return {
-    x: Math.max(100, Math.min(MAP.w - 100, ped.x + random.between(-320, 320))),
-    y: road.at + (ped.y < road.at ? -58 : 58),
-  };
-}
-
-// What scares a pedestrian right now, if anything: a shot or a blast nearby.
-function nearbyDanger(world, ped) {
-  if (world.lastShotAt && world.time - world.lastShotAt < 0.8) {
-    const d = Math.hypot(ped.x - world.lastShotX, ped.y - world.lastShotY);
-    if (d < 260) return { x: world.lastShotX, y: world.lastShotY };
+  // A fresh explosion (the ring particle marks the blast).
+  for (const pt of world.particles) {
+    if (pt.ring && pt.life > 0.3 && dist(ped.x, ped.y, pt.x, pt.y) < PEDS.scareRadius + 60) {
+      return { x: pt.x, y: pt.y };
+    }
   }
-  if (world.lastExplosionAt && world.time - world.lastExplosionAt < 1.2) {
-    const d = Math.hypot(ped.x - world.lastExplosionX, ped.y - world.lastExplosionY);
-    if (d < 320) return { x: world.lastExplosionX, y: world.lastExplosionY };
+  // The player's car, coming in fast.
+  const car = world.player.inCar;
+  if (car && Math.abs(car.speed) > 200 && dist(ped.x, ped.y, car.x, car.y) < 110) {
+    return { x: car.x, y: car.y };
   }
   return null;
 }
 
-export function stepPeds(world, dt) {
-  for (const ped of world.peds) {
-    if (ped.state === 'down') {
-      ped.downTimer -= dt;
-      continue;
+/** Step one ped. */
+function updatePed(world, ped, dt) {
+  if (ped.down) {
+    ped.downTime -= dt;
+    if (ped.downTime <= 0) {
+      ped.down = false;
+      ped.state = 'walk';
+      ped.stateTime = 2;
     }
-    const danger = nearbyDanger(world, ped);
-    if (danger) {
-      ped.state = 'flee';
-      ped.fleeAngle = Math.atan2(ped.y - danger.y, ped.x - danger.x);
-    }
-    if (ped.state === 'flee') {
-      ped.stateTime += dt;
-      const away = ped.fleeAngle ?? 0;
-      ped.angle = away;
-      slideCircle(world.city, ped, Math.cos(away) * PANIC * dt, Math.sin(away) * PANIC * dt, false);
-      if (ped.stateTime > 3) {
-        ped.state = 'walk';
-        ped.stateTime = 0;
-        ped.target = null;
-      }
-      continue;
-    }
-    // Stroll: pick a sidewalk point, walk to it, pick another.
-    if (!ped.target) ped.target = strollTarget(ped, world.random);
-    const dx = ped.target.x - ped.x;
-    const dy = ped.target.y - ped.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 10) {
-      ped.target = null;
-      continue;
-    }
-    ped.angle = Math.atan2(dy, dx);
-    slideCircle(world.city, ped, (dx / dist) * ped.speed * dt, (dy / dist) * ped.speed * dt, false);
+    return;
   }
-  // The dead and the fled fade out; fresh walkers keep the streets full.
-  world.peds = world.peds.filter((p) => p.state !== 'down' || p.downTimer > 0);
-  while (world.peds.length < 22) world.peds.push(makePed(world.random, world.city));
+  const danger = dangerNear(world, ped);
+  if (danger) {
+    ped.state = 'flee';
+    ped.fleeAngle = Math.atan2(ped.y - danger.y, ped.x - danger.x);
+    ped.fleeTime = 2.2;
+  }
+  if (ped.state === 'flee') {
+    ped.fleeTime -= dt;
+    const away = ped.fleeAngle;
+    ped.x += Math.cos(away) * PEDS.fleeSpeed * dt;
+    ped.y += Math.sin(away) * PEDS.fleeSpeed * dt;
+    ped.angle = away;
+    ped.walkPhase += dt * 11;
+    if (ped.fleeTime <= 0) {
+      ped.state = 'walk';
+      ped.stateTime = world.rng.range(1, 3);
+    }
+  } else if (ped.state === 'wait') {
+    ped.stateTime -= dt;
+    if (ped.stateTime <= 0) {
+      ped.state = 'walk';
+      ped.stateTime = world.rng.range(2, 6);
+      ped.angle = world.rng.range(0, Math.PI * 2);
+    }
+  } else {
+    // Stroll: mostly straight, sometimes pausing at a corner.
+    ped.stateTime -= dt;
+    ped.x += Math.cos(ped.angle) * ped.speed * dt;
+    ped.y += Math.sin(ped.angle) * ped.speed * dt;
+    ped.walkPhase += dt * 6;
+    if (ped.stateTime <= 0) {
+      if (world.rng.maybe(0.3)) {
+        ped.state = 'wait';
+        ped.stateTime = world.rng.range(1, 3);
+      } else {
+        ped.stateTime = world.rng.range(2, 6);
+        ped.angle += world.rng.range(-1.2, 1.2);
+      }
+    }
+    // Drift back toward the nearest sidewalk when wandering off.
+    if (!nearSidewalk(world, ped.x, ped.y)) {
+      const rx = nearestRoadCoord(world, ped.x);
+      const ry = nearestRoadCoord(world, ped.y);
+      const dx = Math.abs(ped.x - rx) < Math.abs(ped.y - ry) ? rx - ped.x : 0;
+      const dy = dx === 0 ? ry - ped.y : 0;
+      const len = Math.hypot(dx, dy) || 1;
+      ped.angle = Math.atan2(dy / len, dx / len);
+    }
+  }
+  ped.x = clamp(ped.x, 20, WORLD.size - 20);
+  ped.y = clamp(ped.y, 20, WORLD.size - 20);
 }
 
-// A car running a pedestrian over: the pedestrian goes down, the law notices.
-export function checkRunOvers(world) {
-  for (const car of world.cars) {
-    if (car.wrecked || Math.abs(car.speed) < 120) continue;
-    for (const ped of world.peds) {
-      if (ped.state === 'down') continue;
-      const d = Math.hypot(ped.x - car.x, ped.y - car.y);
-      if (d < 26) {
-        ped.state = 'down';
-        ped.downTimer = 6;
-        world.floatText(ped.x, ped.y - 20, 'PEDESTRIAN DOWN', '#ff5a5a');
-        if (car.kind === 'player') {
-          world.addHeat(1);
-          world.stats.pedsHit += 1;
-        }
-      }
-    }
-  }
-}
-
-// Bullets hit pedestrians: they go down and it counts as a crime.
-export function bulletHitsPed(world, bullet) {
-  for (const ped of world.peds) {
-    if (ped.state === 'down') continue;
-    const d = Math.hypot(ped.x - bullet.x, ped.y - bullet.y);
-    if (d < 14) {
-      ped.state = 'down';
-      ped.downTimer = 6;
-      if (bullet.from === 'player') {
-        world.addHeat(2);
-        world.stats.pedsHit += 1;
-      }
-      return true;
-    }
+function nearSidewalk(world, x, y) {
+  const half = WORLD.roadWidth / 2 + 22;
+  for (const r of world.city.roads) {
+    if (Math.abs(x - r) <= half || Math.abs(y - r) <= half) return true;
   }
   return false;
+}
+
+function nearestRoadCoord(world, v) {
+  let best = world.city.roads[0];
+  let bestD = Infinity;
+  for (const r of world.city.roads) {
+    const d = Math.abs(v - r);
+    if (d < bestD) {
+      bestD = d;
+      best = r;
+    }
+  }
+  return best;
+}
+
+/** Step every ped, and top the streets back up when some have left. */
+export function updatePeds(world, dt) {
+  for (const ped of world.peds) updatePed(world, ped, dt);
+  if (world.peds.length < PEDS.count && world.time - (world.lastPedTopUp || 0) > 5) {
+    world.lastPedTopUp = world.time;
+    spawnPeds(world, 2);
+  }
 }

@@ -1,176 +1,131 @@
-// The screenshot scenes behind ?shot=cover|street|heli|bank. Each one sets
-// up a real game state (a mission, a wanted level, a chase), then plays it
-// forward with a simple autopilot — drive along the road, walk to the
-// marker — so the frame is what a short game really looks like, and the
-// same seed always gives the same frame. Nothing here is faked: every pixel
-// is the game's own code.
-import { TICK, SITES } from './config.js';
-import { beginJob } from './missions.js';
+// Staged screenshots for SOLMAR HEAT.
+// The game is opened with ?shot=<name> and this module arranges a living
+// diorama for each of the four shots, then the main loop freezes the scene
+// and flags window.__shotReady. Every scene is built from the real game
+// systems (real missions, real police, real traffic) so the screenshots show
+// the game itself, not a mock-up. Seed 7 keeps the city identical between
+// takes.
+
+import { PLACES } from './config.js';
 import { makeCar } from './vehicles.js';
+import { startMission } from './missions.js';
+import { spawnCop, spawnPoliceCar, spawnHeli } from './police.js';
 
-function stubInput() {
-  return {
-    keys: new Set(),
-    mouseX: 0,
-    mouseY: 0,
-    mouseDown: false,
-    axis: () => ({ x: 0, y: 0 }),
-    held: () => false,
-    shift: () => false,
-    takeActions: () => 0,
-  };
-}
-
-function wrapAngle(diff) {
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  return diff;
-}
-
-function driveNorth(game, roadX) {
-  // Stay on the road and keep the throttle down.
-  const car = game.world.player.inCar;
-  if (!car) return;
-  const want = -Math.PI / 2; // north
-  const diff = wrapAngle(want - car.angle);
-  const steer = Math.max(-1, Math.min(1, diff * 2 + (roadX - car.x) * 0.004));
-  game.fakeInput.axis = () => ({ x: steer, y: -1 });
-}
-
-function walkToMarker(game) {
-  const m = game.world.mission;
-  const p = game.world.player;
-  const target = m && m.marker ? m.marker : SITES.plaza;
-  const dx = target.x - p.x;
-  const dy = target.y - p.y;
-  const dist = Math.hypot(dx, dy) || 1;
-  game.fakeInput.axis = () => ({ x: dx / dist, y: dy / dist });
-  // Aim ahead of the walk so the gun points where the player is going.
-  game.fakeInput.mouseX = 640 + (dx / dist) * 160;
-  game.fakeInput.mouseY = 360 + (dy / dist) * 160;
-}
-
-function stepFor(game, seconds, autopilot) {
-  const steps = Math.floor(seconds / TICK);
-  for (let i = 0; i < steps; i += 1) {
-    if (autopilot) autopilot(game);
-    game.step(TICK, game.fakeInput);
-  }
-}
-
-function addPursuit(game, count, behind) {
-  const p = game.world.player;
-  for (let i = 0; i < count; i += 1) {
-    const car = makeCar(p.x + 60 + i * 30, p.y + behind + i * 90, -Math.PI / 2, '#2e5fa3', 'police');
-    car.speed = 320;
-    game.world.cars.push(car);
-  }
-}
-
-function addTrafficAhead(game, roadX, fromY, count) {
-  for (let i = 0; i < count; i += 1) {
-    const y = fromY - i * 170;
-    const car = makeCar(roadX, y, -Math.PI / 2, game.world.random.choose(['#c0392b', '#2980b9', '#f1c40f', '#ecf0f1']), 'traffic');
-    car.speed = 95;
-    car.target = { x: roadX, y: 250 };
-    game.world.cars.push(car);
-  }
-}
-
-function addWreck(game, x, y, angle, color, smokeSize) {
-  const wreck = makeCar(x, y, angle, color, 'parked');
-  wreck.wrecked = true;
-  game.world.cars.push(wreck);
-  game.world.particles.push({ kind: 'smoke', x, y, vx: 0, vy: -20, life: 1, max: 1, size: smokeSize });
-}
-
-function streetScene(game) {
+/** Put the player in a fresh car at a spot, driving at a speed. */
+function putPlayerInCar(game, x, y, angle, speed, color) {
   const world = game.world;
-  beginJob(world, 1);
-  world.player.x = 850;
-  world.player.y = 860;
-  world.player.angle = -Math.PI / 2;
-  stepFor(game, 2, walkToMarker);
-}
-
-function heliScene(game) {
-  const world = game.world;
-  beginJob(world, 5);
-  // Put the player in a car on the east-west road, heading east, heat at 4.
-  const car = makeCar(1450, 950, 0, '#c0392b', 'player');
-  car.speed = 300;
+  const car = makeCar('player', x, y, angle, color || '#c23b2e');
+  car.speed = speed;
   world.cars.push(car);
   world.player.inCar = car;
-  world.player.x = car.x;
-  world.player.y = car.y;
-  world.setWanted(4);
-  // A roadblock ahead and a wreck smoking beside it.
-  const block1 = makeCar(1900, 930, Math.PI / 2, '#2e5fa3', 'police');
-  const block2 = makeCar(1900, 980, Math.PI / 2, '#2e5fa3', 'police');
-  world.cars.push(block1, block2);
-  addWreck(game, 1820, 910, 0.4, '#8e44ad', 20);
-  // Park the helicopter above the player so it is in frame.
-  let heliPlaced = false;
-  stepFor(game, 1.2, (g) => {
-    g.fakeInput.axis = () => ({ x: 0, y: -1 });
-    if (!heliPlaced && g.world.heli) {
-      g.world.heli.angle = -2.0;
-      heliPlaced = true;
-    }
-  });
+  world.player.x = x;
+  world.player.y = y;
+  world.player.angle = angle;
+  return car;
 }
 
-function bankScene(game) {
+/** A wrecked car, parked as scenery (for the heli shot's roadblock scene). */
+function putWreck(game, x, y, angle) {
   const world = game.world;
-  beginJob(world, 4);
-  world.mission.stage = 1;
-  world.mission.progress = 0.6;
-  world.mission.objective = 'Cracking the safe… 60%';
-  // Stand just off the marker so the player is visible beside it, not under it.
-  world.player.x = 2150;
-  world.player.y = 720;
-  world.player.angle = -Math.PI / 2;
-  world.setWanted(3);
-  addPursuit(game, 2, 500);
-  stepFor(game, 1.5, (g) => {
-    g.fakeInput.axis = () => ({ x: 0, y: 0 });
-    g.fakeInput.mouseX = 640;
-    g.fakeInput.mouseY = 200;
-    // Hold E: the safe keeps cracking, so the progress text shows.
-    g.fakeInput.held = () => true;
-  });
-}
-
-function coverScene(game) {
-  const world = game.world;
-  // Default: cover — a high-speed chase down the central avenue.
-  beginJob(world, 2);
-  const car = makeCar(1050, 1500, -Math.PI / 2, '#c0392b', 'player');
-  car.speed = 330;
+  const car = makeCar('traffic', x, y, angle, '#3a9e5f');
+  car.health = 0;
+  car.wrecked = true;
   world.cars.push(car);
-  world.player.inCar = car;
-  world.player.x = car.x;
-  world.player.y = car.y;
-  world.mission.stage = 1;
-  world.setWanted(3);
-  world.mission.objective = 'Drive Mara to the Safehouse';
-  world.mission.marker = { x: SITES.safehouse.x, y: SITES.safehouse.y, label: 'SAFEHOUSE' };
-  addPursuit(game, 2, 260);
-  addTrafficAhead(game, 1050, 1300, 3);
-  addWreck(game, 1050, 820, 0.3, '#e67e22', 22);
-  stepFor(game, 1.5, (g) => driveNorth(g, 1050));
+  return car;
 }
 
-// Set the world to the named scene and return the screen to draw over it.
-// Names: cover (driving chase), street (on foot in the plaza), heli (4-star
-// chase with the helicopter), bank (the safe-cracking mission).
-export function stageShot(name, game) {
+/** Traffic cars ahead of the player, in a loose convoy. */
+function addTrafficAhead(game, x, y, count) {
   const world = game.world;
-  game.fakeInput = stubInput();
+  for (let i = 0; i < count; i += 1) {
+    const car = makeCar('traffic', x + world.rng.range(-30, 30), y - i * 90, -Math.PI / 2, '#e8b73a');
+    car.speed = 150;
+    world.cars.push(car);
+  }
+}
+
+/** Two police cars parked across the road: a roadblock. */
+function addRoadblockAt(game, x, y) {
+  const world = game.world;
+  for (const side of [-1, 1]) {
+    const car = makeCar('police', x, y + side * 42, Math.PI / 2, '#20242e');
+    car.roadblock = true;
+    world.cars.push(car);
+  }
+}
+
+/** Step the world forward with the W key held (the car drives itself). */
+function driveForward(game, seconds) {
+  game.input.fakeHold('KeyW');
+  const steps = Math.round(seconds * 60);
+  for (let i = 0; i < steps; i += 1) game.step(1 / 60);
+  game.input.fakeRelease('KeyW');
+}
+
+/** Step the world forward with no input (the scene settles). */
+function settle(game, seconds) {
+  const steps = Math.round(seconds * 60);
+  for (let i = 0; i < steps; i += 1) game.step(1 / 60);
+}
+
+/**
+ * Stage one named scene. The game must already be a fresh new game; this
+ * function mutates it into the shot and leaves it frozen for capture.
+ */
+export function runShot(game, name) {
+  const world = game.world;
+  if (name === 'cover') {
+    // A high-speed chase: Mara in the passenger seat, three stars, two
+    // interceptors closing in, traffic ahead, plaza and park in frame.
+    startMission(world, 2);
+    const car = putPlayerInCar(game, 1050, 1500, -Math.PI / 2, 430, '#c23b2e');
+    addTrafficAhead(game, 1050, 950, 3);
+    spawnPoliceCar(world);
+    spawnPoliceCar(world);
+    driveForward(game, 1.5);
+    // Freeze the moment at full speed: the chase is captured mid-flight.
+    car.speed = 400;
+  } else if (name === 'street') {
+    // On foot in the plaza, mid-package-run: one of three collected, the
+    // timer at 178 seconds, peds and traffic living around the player.
+    startMission(world, 1);
+    world.mission.data.collected = 1;
+    world.mission.objective = 'Collect the packages: 1/3';
+    world.mission.timer = 178;
+    world.player.x = 1000;
+    world.player.y = 1150;
+    world.player.inCar = null;
+    addTrafficAhead(game, 1000, 800, 2);
+    settle(game, 0.4);
+  } else if (name === 'heli') {
+    // Five stars at the plaza: the helicopter overhead with its spotlight,
+    // three interceptors, a roadblock and a wreck ahead, Kane's job live.
+    startMission(world, 5);
+    world.wanted = 5;
+    putPlayerInCar(game, 1450, 950, 0, 60, '#2e6fc2');
+    spawnHeli(world);
+    if (world.heli) world.heli.angle = -2.0;
+    addRoadblockAt(game, 1900, 950);
+    putWreck(game, 1820, 910, 0.4);
+    spawnPoliceCar(world);
+    spawnPoliceCar(world);
+    spawnPoliceCar(world);
+    settle(game, 1.2);
+  } else if (name === 'bank') {
+    // The bank job at its tensest: the safe is 89% cracked, the crew is in
+    // the vault, and the police are converging on Harbor Bank.
+    startMission(world, 4);
+    world.mission.stage = 1;
+    world.mission.objective = 'Crack the safe — hold E';
+    world.mission.data.crack = 89;
+    world.player.x = 2150;
+    world.player.y = 720;
+    world.player.inCar = null;
+    world.wanted = 3;
+    spawnCop(world);
+    spawnCop(world);
+    spawnPoliceCar(world);
+    settle(game, 0.3);
+  }
   world.screen = 'play';
-  if (name === 'street') streetScene(game);
-  else if (name === 'heli') heliScene(game);
-  else if (name === 'bank') bankScene(game);
-  else coverScene(game);
-  return { screen: 'play' };
 }
