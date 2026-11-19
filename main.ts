@@ -1,56 +1,58 @@
-// SOLMAR HEAT — the entrypoint for gta6-01.
-// Copies the playable game and its screenshots into the output directory
-// and writes the dossier the gate scores, with the kit's own builder.
-// Runs on plain Node 22+ with no install step: standard library only.
-
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+// SOLMAR HEAT — entrypoint. Copies game/ and screenshots/ into the
+// output directory and writes dossier.json with the kit's buildDossier.
+// Runs on Node 22+ with the standard library only; no install step.
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-const repoRoot = dirname(fileURLToPath(import.meta.url));
-const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const ROOT = fileURLToPath(new URL('.', import.meta.url));
+const OUT = process.env.MAKEFUN_OUTPUT_DIR || '/output';
 
-const gameDir = join(repoRoot, 'game');
-const shotsDir = join(repoRoot, 'screenshots');
+const CAPS = {
+  text_max_bytes: 163840,
+  screenshots: { max: 4, max_bytes: 262144 },
+  game_max_files: 993,
+  game_max_bytes: 48 * 1024 * 1024,
+  game_path_max_bytes: 1000,
+};
 
-if (!existsSync(join(gameDir, 'index.html'))) {
-  throw new Error('SOLMAR HEAT: game/index.html is missing — nothing to hand in');
+function copyTree(src, dst) {
+  if (existsSync(dst)) rmSync(dst, { recursive: true, force: true });
+  mkdirSync(dst, { recursive: true });
+  cpSync(src, dst, { recursive: true });
 }
 
-// The gate takes 3 or 4 screenshots, each at most 256 KiB. Refuse a bad
-// set here, loudly, instead of handing in an entry the gate rejects.
-if (existsSync(shotsDir)) {
-  const shots = readdirSync(shotsDir)
-    .filter((f) => /\.(png|jpe?g)$/i.test(f))
-    .sort();
+function checkShots(shotsDir) {
+  if (!existsSync(shotsDir)) throw new Error('main.ts: screenshots/ is missing (need 3-4 images)');
+  const shots = readdirSync(shotsDir).filter((f) => !f.startsWith('.'));
   if (shots.length < 3 || shots.length > 4) {
-    throw new Error(`SOLMAR HEAT: screenshots/ holds ${shots.length} images, need 3 or 4`);
+    throw new Error(`main.ts: screenshots/ holds ${shots.length} images, need 3-4`);
   }
-  for (const shot of shots) {
-    const size = statSync(join(shotsDir, shot)).size;
-    if (size > 262144) {
-      throw new Error(`SOLMAR HEAT: screenshots/${shot} is ${size} bytes, over the 256 KiB cap`);
+  for (const f of shots) {
+    const size = statSync(join(shotsDir, f)).size;
+    if (size > CAPS.screenshots.max_bytes) {
+      throw new Error(`main.ts: screenshots/${f} is ${size} bytes, over the 256 KiB cap`);
     }
   }
+  return shots;
 }
 
-mkdirSync(join(out, 'game'), { recursive: true });
-mkdirSync(join(out, 'screenshots'), { recursive: true });
-cpSync(gameDir, join(out, 'game'), { recursive: true });
-if (existsSync(shotsDir)) {
-  cpSync(shotsDir, join(out, 'screenshots'), { recursive: true });
+function main() {
+  const gameDir = join(ROOT, 'game');
+  const shotsDir = join(ROOT, 'screenshots');
+  if (!existsSync(join(gameDir, 'index.html'))) {
+    throw new Error('main.ts: game/index.html is missing');
+  }
+  const shots = checkShots(shotsDir);
+  mkdirSync(OUT, { recursive: true });
+  copyTree(gameDir, join(OUT, 'game'));
+  if (existsSync(shotsDir)) copyTree(shotsDir, join(OUT, 'screenshots'));
+  const dossier = buildDossier(OUT, CAPS);
+  writeFileSync(join(OUT, 'dossier.json'), dossier);
+  let shotBytes = 0;
+  for (const f of shots) shotBytes += statSync(join(shotsDir, f)).size;
+  console.log(`SOLMAR HEAT: dossier ${dossier.length} bytes, ${shots.length} screenshots (${shotBytes} bytes) -> ${OUT}`);
 }
 
-writeFileSync(
-  join(out, 'dossier.json'),
-  buildDossier(out, {
-    text_max_bytes: 163840,
-    screenshots: { max: 4, max_bytes: 262144 },
-    game_max_files: 993,
-    game_max_bytes: 50331648,
-    game_path_max_bytes: 1000,
-  }),
-);
-
-console.log(`SOLMAR HEAT handed in to ${out}`);
+main();

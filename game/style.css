@@ -1,19 +1,11 @@
 /* SOLMAR HEAT — page chrome around the canvas. The game itself draws
-   every screen on the canvas; this file only centres it and keeps the
-   page dark so the city is the brightest thing on screen. */
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
+   everything (HUD, menus) on the canvas, so this file only centers it. */
+html, body {
   margin: 0;
   padding: 0;
-  background: #0c0e12;
-  color: #f2f2f2;
+  background: #0b0e14;
+  color: #e8e8e8;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  height: 100%;
 }
 
 #stage {
@@ -22,44 +14,36 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  padding: 0;
+  gap: 10px;
+  padding: 12px;
+  box-sizing: border-box;
 }
 
 #game {
   display: block;
-  width: min(1280px, 100vw);
+  width: min(1280px, 96vw);
   height: auto;
   aspect-ratio: 16 / 9;
-  background: #69a84f;
-  border: 2px solid #2a2e35;
-  border-radius: 6px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
-  cursor: crosshair;
+  background: #1a2b1a;
+  border: 2px solid #2a2f3a;
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  outline: none;
 }
 
 #game:focus-visible {
-  outline: 3px solid #ffd94d;
-  outline-offset: 3px;
+  border-color: #f5d76e;
 }
 
 #hint {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 8px;
   margin: 0;
   font-size: 13px;
-  letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.75);
+  color: #9aa3b2;
   text-align: center;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-  pointer-events: none;
 }
 
 @media (max-width: 700px) {
   #hint {
     font-size: 11px;
-    padding: 0 12px;
   }
 }

@@ -1,109 +1,91 @@
-// Particles, explosions, smoke and floating text for SOLMAR HEAT.
-// Everything here is cosmetic: it never changes the rules, only shows
-// them — muzzle flashes, tyre smoke, explosions, cash popups.
-
+// Particles, muzzle flashes, explosions, smoke and floating text —
+// the juice that makes a chase feel like a chase. All of it is drawn
+// by render.js from the arrays this module owns.
 export function makeEffects() {
-  return { sparks: [], smoke: [], blasts: [], floats: [] };
-}
-
-export function burst(fx, x, y, color, n, speed) {
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const v = speed * (0.4 + Math.random() * 0.6);
-    fx.sparks.push({
-      x, y,
-      vx: Math.cos(a) * v,
-      vy: Math.sin(a) * v,
-      life: 0.35 + Math.random() * 0.25,
-      age: 0,
-      color,
-      size: 2 + Math.random() * 2,
-    });
-  }
-}
-
-export function puff(fx, x, y, dark) {
-  fx.smoke.push({
-    x, y,
-    vx: (Math.random() - 0.5) * 24,
-    vy: (Math.random() - 0.5) * 24 - 12,
-    life: 0.9 + Math.random() * 0.5,
-    age: 0,
-    size: 6 + Math.random() * 6,
-    dark: !!dark,
-  });
-}
-
-export function explode(fx, x, y, big) {
-  fx.blasts.push({ x, y, age: 0, life: big ? 0.7 : 0.45, max: big ? 90 : 55 });
-  burst(fx, x, y, '#ffcf3d', big ? 26 : 14, big ? 320 : 220);
-  burst(fx, x, y, '#ff5a2a', big ? 18 : 10, big ? 220 : 150);
-  for (let i = 0; i < (big ? 5 : 3); i++) {
-    puff(fx, x + (Math.random() - 0.5) * 30, y + (Math.random() - 0.5) * 30, true);
-  }
-}
-
-export function floatText(fx, x, y, text, color) {
-  fx.floats.push({ x, y, text, color: color || '#ffffff', age: 0, life: 1.4 });
-}
-
-export function stepEffects(fx, dt) {
-  for (const s of fx.sparks) {
-    s.age += dt;
-    s.x += s.vx * dt;
-    s.y += s.vy * dt;
-    s.vx *= 0.92;
-    s.vy *= 0.92;
-  }
-  fx.sparks = fx.sparks.filter((s) => s.age < s.life);
-  for (const s of fx.smoke) {
-    s.age += dt;
-    s.x += s.vx * dt;
-    s.y += s.vy * dt;
-    s.size += 14 * dt;
-  }
-  fx.smoke = fx.smoke.filter((s) => s.age < s.life);
-  for (const b of fx.blasts) b.age += dt;
-  fx.blasts = fx.blasts.filter((b) => b.age < b.life);
-  for (const f of fx.floats) {
-    f.age += dt;
-    f.y -= 34 * dt;
-  }
-  fx.floats = fx.floats.filter((f) => f.age < f.life);
-}
-
-export function drawEffects(ctx, fx, cam) {
-  for (const s of fx.smoke) {
-    const a = 0.28 * (1 - s.age / s.life);
-    ctx.fillStyle = s.dark ? `rgba(40,40,40,${a})` : `rgba(220,220,220,${a})`;
-    ctx.beginPath();
-    ctx.arc(s.x - cam.x, s.y - cam.y, s.size, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  for (const b of fx.blasts) {
-    const t = b.age / b.life;
-    const r = b.max * (0.3 + 0.7 * t);
-    ctx.fillStyle = `rgba(255,${Math.floor(180 - 120 * t)},40,${0.85 * (1 - t)})`;
-    ctx.beginPath();
-    ctx.arc(b.x - cam.x, b.y - cam.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `rgba(255,240,180,${0.9 * (1 - t)})`;
-    ctx.beginPath();
-    ctx.arc(b.x - cam.x, b.y - cam.y, r * 0.55, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  for (const s of fx.sparks) {
-    ctx.globalAlpha = 1 - s.age / s.life;
-    ctx.fillStyle = s.color;
-    ctx.fillRect(s.x - cam.x - s.size / 2, s.y - cam.y - s.size / 2, s.size, s.size);
-  }
-  ctx.globalAlpha = 1;
-  ctx.textAlign = 'center';
-  ctx.font = 'bold 15px system-ui, sans-serif';
-  for (const f of fx.floats) {
-    ctx.globalAlpha = 1 - f.age / f.life;
-    ctx.fillStyle = f.color;
-    ctx.fillText(f.text, f.x - cam.x, f.y - cam.y);
-  }
-  ctx.globalAlpha = 1;
+  const fx = {
+    parts: [],
+    booms: [],
+    muzzle(p, x, y, angle) {
+      for (let i = 0; i < 5; i++) {
+        fx.parts.push({
+          x, y,
+          vx: Math.cos(angle + (Math.random() - 0.5) * 0.5) * (220 + Math.random() * 160),
+          vy: Math.sin(angle + (Math.random() - 0.5) * 0.5) * (220 + Math.random() * 160),
+          life: 0.14, max: 0.14, size: 3 + Math.random() * 2, color: '#ffd94d',
+        });
+      }
+    },
+    hit(x, y) {
+      for (let i = 0; i < 6; i++) {
+        fx.parts.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 260, vy: (Math.random() - 0.5) * 260,
+          life: 0.3, max: 0.3, size: 2 + Math.random() * 2, color: '#ff6b6b',
+        });
+      }
+    },
+    sparks(x, y) {
+      for (let i = 0; i < 8; i++) {
+        fx.parts.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 320, vy: (Math.random() - 0.5) * 320,
+          life: 0.25, max: 0.25, size: 2, color: '#ffe9a8',
+        });
+      }
+    },
+    blood(x, y) {
+      for (let i = 0; i < 10; i++) {
+        fx.parts.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 180, vy: (Math.random() - 0.5) * 180,
+          life: 0.5, max: 0.5, size: 3, color: '#c0392b',
+        });
+      }
+    },
+    explosion(x, y, scale = 1) {
+      fx.booms.push({ x, y, life: 0.6, max: 0.6, scale });
+      for (let i = 0; i < 22; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = (120 + Math.random() * 320) * scale;
+        fx.parts.push({
+          x, y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 0.5 + Math.random() * 0.4, max: 0.9,
+          size: 3 + Math.random() * 4, color: ['#ff9f43', '#ff6b6b', '#feca57'][i % 3],
+        });
+      }
+      for (let i = 0; i < 8; i++) {
+        fx.parts.push({
+          x: x + (Math.random() - 0.5) * 30, y: y + (Math.random() - 0.5) * 30,
+          vx: (Math.random() - 0.5) * 40, vy: -30 - Math.random() * 40,
+          life: 1.4, max: 1.4, size: 8 + Math.random() * 8, color: 'rgba(90,90,90,0.5)',
+        });
+      }
+    },
+    smoke(x, y) {
+      fx.parts.push({
+        x, y,
+        vx: (Math.random() - 0.5) * 30, vy: -40 - Math.random() * 30,
+        life: 1.1, max: 1.1, size: 7 + Math.random() * 6, color: 'rgba(80,80,80,0.45)',
+      });
+    },
+    step(dt) {
+      for (const p of fx.parts) {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= Math.pow(0.2, dt);
+        p.vy *= Math.pow(0.2, dt);
+        p.life -= dt;
+      }
+      // filter in place: world.booms / world.parts hold this same array
+      for (let i = fx.parts.length - 1; i >= 0; i--) {
+        if (fx.parts[i].life <= 0) fx.parts.splice(i, 1);
+      }
+      for (const b of fx.booms) b.life -= dt;
+      for (let i = fx.booms.length - 1; i >= 0; i--) {
+        if (fx.booms[i].life <= 0) fx.booms.splice(i, 1);
+      }
+    },
+  };
+  return fx;
 }

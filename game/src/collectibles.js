@@ -1,61 +1,36 @@
-// Hidden packages for SOLMAR HEAT: eight stashes tucked away from the
-// mission trail, each worth $75. No map marker gives them away — a faint
-// golden sparkle shows only when Danny is close. The count survives in
-// the save, so a careful player keeps their progress.
+// Eight hidden packages stashed off the mission trail. A package glints
+// gold once the player is close (220 px); walk over it (34 px) to pocket
+// $75. The HUD counts them and the save file remembers which are gone.
+import { CFG } from './config.js';
 
-import { REWARDS } from './config.js';
-import { floatText, burst } from './effects.js';
-
-// Fixed hiding spots, spread across the city away from mission markers.
-export const PACKAGE_HIDING_SPOTS = [
-  { x: 450, y: 450 },
-  { x: 1500, y: 450 },
-  { x: 450, y: 1050 },
-  { x: 2050, y: 1050 },
-  { x: 450, y: 2050 },
-  { x: 1250, y: 2050 },
-  { x: 2050, y: 2050 },
-  { x: 2350, y: 2050 },
+const HIDING_SPOTS = [
+  { x: 450, y: 450 }, { x: 2350, y: 300 }, { x: 200, y: 2300 },
+  { x: 1300, y: 2350 }, { x: 2250, y: 1900 }, { x: 900, y: 300 },
+  { x: 1700, y: 1300 }, { x: 350, y: 900 },
 ];
 
-export function spawnHiddenPackages(game) {
-  game.hiddenPackages = PACKAGE_HIDING_SPOTS.map((s) => ({ ...s, got: false }));
-  // A loaded save keeps the packages already found.
-  const kept = game.loadedPackages || 0;
-  for (let i = 0; i < kept && i < game.hiddenPackages.length; i++) {
-    game.hiddenPackages[i].got = true;
-  }
-  game.packagesGot = kept;
+export function placePackages() {
+  return HIDING_SPOTS.map((s, i) => ({ id: i, x: s.x, y: s.y, taken: false }));
 }
 
-export function stepCollectibles(game, dt) {
-  const at = game.player.inCar || game.player;
-  for (const pack of game.hiddenPackages) {
-    if (pack.got) continue;
-    const d = Math.hypot(at.x - pack.x, at.y - pack.y);
-    if (d < 42) {
-      pack.got = true;
-      game.packagesGot += 1;
-      game.cash += REWARDS.package;
-      floatText(game.fx, pack.x, pack.y - 20, `HIDDEN PACKAGE  +$${REWARDS.package}`, '#ffd94d');
-      burst(game.fx, pack.x, pack.y, '#ffd94d', 10, 140);
-      game.audio.cash();
+export function stepPackages(world, dt) {
+  const p = world.player;
+  if (!p || world.screen !== 'play') return;
+  for (const pack of world.packages) {
+    if (pack.taken) continue;
+    const d = Math.hypot(p.x - pack.x, p.y - pack.y);
+    pack.glint = d < 220;
+    if (d < CFG.player.pickupRadius) {
+      pack.taken = true;
+      world.cash += CFG.prices.packageReward;
+      world.collected = (world.collected || 0) + 1;
+      world.floats.push({ x: pack.x, y: pack.y - 20, text: `+$${CFG.prices.packageReward}`, life: 1.4, color: '#ffd94d' });
+      world.audio.pickup();
     }
   }
+  void dt;
 }
 
-// The nearest unfound package, for the sparkle and the HUD counter only.
-export function nearestHiddenPackage(game) {
-  const at = game.player.inCar || game.player;
-  let best = null;
-  let bestD = 1e9;
-  for (const pack of game.hiddenPackages) {
-    if (pack.got) continue;
-    const d = Math.hypot(at.x - pack.x, at.y - pack.y);
-    if (d < bestD) {
-      best = pack;
-      bestD = d;
-    }
-  }
-  return best ? { ...best, dist: bestD } : null;
+export function packagesLeft(world) {
+  return world.packages.filter((p) => !p.taken).length;
 }

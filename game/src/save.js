@@ -1,52 +1,37 @@
-// Save / continue for SOLMAR HEAT, via localStorage.
-// Only progress is saved — cash, the next mission, collected packages and
-// the best wanted level survived — never the live world. A save is a plain
-// JSON object under one key, so a corrupt entry is simply ignored.
+// Save / continue through localStorage. One slot, one version key:
+// cash, mission, hidden packages taken, health and armor.
+const KEY = 'solmar-heat-save-v1';
 
-const SAVE_KEY = 'solmar-heat-save-v3';
-
-export function saveProgress(game) {
+export function writeSave(world) {
   try {
     const data = {
-      cash: game.cash,
-      missionIndex: game.missionIndex,
-      packagesGot: game.packagesGot,
-      bestWanted: game.bestWanted,
-      savedAt: Date.now(),
+      cash: world.cash,
+      mission: world.mission ? world.mission.index : 0,
+      packages: world.packages.filter((p) => p.taken).map((p) => p.id),
+      hp: world.player.hp,
+      armor: world.player.armor,
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    localStorage.setItem(KEY, JSON.stringify(data));
     return true;
-  } catch (err) {
+  } catch (e) {
     return false;
   }
 }
 
-export function loadProgress() {
+export function readSave() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (typeof data !== 'object' || data === null) return null;
-    if (typeof data.cash !== 'number' || typeof data.missionIndex !== 'number') return null;
-    return {
-      cash: Math.max(0, Math.floor(data.cash)),
-      missionIndex: Math.min(7, Math.max(0, Math.floor(data.missionIndex))),
-      packagesGot: Math.min(8, Math.max(0, Math.floor(data.packagesGot || 0))),
-      bestWanted: Math.min(5, Math.max(0, Math.floor(data.bestWanted || 0))),
-    };
-  } catch (err) {
+    if (typeof data.cash !== 'number') return null;
+    return data;
+  } catch (e) {
     return null;
   }
 }
 
-export function clearProgress() {
+export function clearSave() {
   try {
-    localStorage.removeItem(SAVE_KEY);
-  } catch (err) {
-    // Storage unavailable: nothing to clear.
-  }
-}
-
-export function hasSave() {
-  return loadProgress() !== null;
+    localStorage.removeItem(KEY);
+  } catch (e) { /* ignore */ }
 }
