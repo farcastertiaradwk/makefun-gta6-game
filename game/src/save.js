@@ -1,62 +1,52 @@
-// Save / continue for SOLMAR HEAT.
-// Progress is stored in localStorage as one small JSON object: cash, the
-// mission reached, health, armor, ammo and where the player stood. Loading
-// never trusts the stored shape — a bad or partial save is ignored and the
-// game starts fresh. All storage access is guarded: in a restricted context
-// (private mode, file://) the game simply plays without saving.
+// Save / continue for SOLMAR HEAT, via localStorage.
+// Only progress is saved — cash, the next mission, collected packages and
+// the best wanted level survived — never the live world. A save is a plain
+// JSON object under one key, so a corrupt entry is simply ignored.
 
-const SAVE_KEY = 'solmar-heat-save-v1';
+const SAVE_KEY = 'solmar-heat-save-v3';
 
-/** Snapshot the parts of the world worth keeping between sessions. */
-export function saveGame(world) {
+export function saveProgress(game) {
   try {
     const data = {
-      version: 1,
+      cash: game.cash,
+      missionIndex: game.missionIndex,
+      packagesGot: game.packagesGot,
+      bestWanted: game.bestWanted,
       savedAt: Date.now(),
-      cash: world.cash,
-      missionIndex: world.mission ? world.mission.index : 0,
-      missionsDone: world.missionsDone || 0,
-      player: {
-        x: world.player.x,
-        y: world.player.y,
-        health: Math.round(world.player.health),
-        armor: Math.round(world.player.armor),
-        mag: world.player.weapon.mag,
-        reserve: world.player.weapon.reserve,
-      },
     };
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;
   } catch (err) {
     return false;
   }
 }
 
-/** Read the save back, or null when there is none / it is unusable. */
-export function loadSave() {
+export function loadProgress() {
   try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 1) return null;
-    if (typeof data.cash !== 'number' || !data.player) return null;
-    if (typeof data.player.x !== 'number' || typeof data.player.y !== 'number') return null;
-    return data;
+    if (typeof data !== 'object' || data === null) return null;
+    if (typeof data.cash !== 'number' || typeof data.missionIndex !== 'number') return null;
+    return {
+      cash: Math.max(0, Math.floor(data.cash)),
+      missionIndex: Math.min(7, Math.max(0, Math.floor(data.missionIndex))),
+      packagesGot: Math.min(8, Math.max(0, Math.floor(data.packagesGot || 0))),
+      bestWanted: Math.min(5, Math.max(0, Math.floor(data.bestWanted || 0))),
+    };
   } catch (err) {
     return null;
   }
 }
 
-/** Forget the save (used after the story is finished, or on request). */
-export function clearSave() {
+export function clearProgress() {
   try {
-    window.localStorage.removeItem(SAVE_KEY);
+    localStorage.removeItem(SAVE_KEY);
   } catch (err) {
-    /* ignore */
+    // Storage unavailable: nothing to clear.
   }
 }
 
-/** Does a usable save exist? The title screen uses this for Continue. */
 export function hasSave() {
-  return loadSave() !== null;
+  return loadProgress() !== null;
 }

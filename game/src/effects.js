@@ -1,152 +1,109 @@
-// Particles, explosions and floating text for SOLMAR HEAT.
-// Everything visual-but-temporary lives here: muzzle flashes, crash smoke,
-// big explosions (with a shockwave ring), sparks, and the little cash and
-// damage numbers that float up over the action. Effects never change game
-// state except through the one deliberate channel: an explosion scares
-// nearby pedestrians and can hurt the player, which updateEffects applies.
+// Particles, explosions, smoke and floating text for SOLMAR HEAT.
+// Everything here is cosmetic: it never changes the rules, only shows
+// them — muzzle flashes, tyre smoke, explosions, cash popups.
 
-import { clamp } from './random.js';
-
-/** Add one particle to the world. */
-export function addParticle(world, x, y, opts) {
-  const o = opts || {};
-  world.particles.push({
-    x,
-    y,
-    vx: o.vx || 0,
-    vy: o.vy || 0,
-    life: o.life || 0.5,
-    maxLife: o.life || 0.5,
-    size: o.size || 3,
-    color: o.color || '#ffcf5a',
-    grav: o.grav || 0,
-    drag: o.drag === undefined ? 0.92 : o.drag,
-  });
+export function makeEffects() {
+  return { sparks: [], smoke: [], blasts: [], floats: [] };
 }
 
-/** A short spray of sparks (muzzle flash, impacts, pickups). */
-export function burst(world, x, y, count, color, speed, life) {
-  for (let i = 0; i < count; i += 1) {
-    const a = world.rng.range(0, Math.PI * 2);
-    const s = world.rng.range(speed * 0.3, speed);
-    addParticle(world, x, y, {
-      vx: Math.cos(a) * s,
-      vy: Math.sin(a) * s,
-      life: world.rng.range(life * 0.5, life),
-      size: world.rng.range(2, 4.5),
+export function burst(fx, x, y, color, n, speed) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = speed * (0.4 + Math.random() * 0.6);
+    fx.sparks.push({
+      x, y,
+      vx: Math.cos(a) * v,
+      vy: Math.sin(a) * v,
+      life: 0.35 + Math.random() * 0.25,
+      age: 0,
       color,
-      drag: 0.9,
+      size: 2 + Math.random() * 2,
     });
   }
 }
 
-/** Muzzle flash at the end of a gun barrel. */
-export function muzzle(world, x, y, angle) {
-  const mx = x + Math.cos(angle) * 20;
-  const my = y + Math.sin(angle) * 20;
-  burst(world, mx, my, 6, '#ffd94d', 260, 0.16);
-  addParticle(world, mx, my, { vx: 0, vy: 0, life: 0.07, size: 9, color: '#fff3b0' });
-}
-
-/** Grey smoke puff, used by wrecks and explosions. */
-export function smoke(world, x, y, big) {
-  const n = big ? 10 : 4;
-  for (let i = 0; i < n; i += 1) {
-    addParticle(world, x + world.rng.range(-14, 14), y + world.rng.range(-14, 14), {
-      vx: world.rng.range(-16, 16),
-      vy: world.rng.range(-34, -8),
-      life: world.rng.range(0.8, 1.6),
-      size: world.rng.range(7, big ? 16 : 11),
-      color: '#8a8a8a',
-      drag: 0.97,
-    });
-  }
-}
-
-/**
- * A big explosion: flash, fire, smoke, a shockwave ring, a loud sound, and
- * real consequences — nearby peds flee, the player takes damage if caught
- * close, and nearby cars lose health. The ring is a particle with a
- * growing size so the renderer can draw it as an expanding circle.
- */
-export function explode(world, x, y, big) {
-  const radius = big ? 150 : 90;
-  burst(world, x, y, big ? 26 : 14, '#ff7a2e', big ? 420 : 300, 0.55);
-  burst(world, x, y, 10, '#ffe08a', 200, 0.4);
-  smoke(world, x, y, big);
-  world.particles.push({
-    x, y, vx: 0, vy: 0,
-    life: 0.45, maxLife: 0.45, size: 12, color: '#ffffff',
-    grav: 0, drag: 1, ring: true, ringMax: radius,
+export function puff(fx, x, y, dark) {
+  fx.smoke.push({
+    x, y,
+    vx: (Math.random() - 0.5) * 24,
+    vy: (Math.random() - 0.5) * 24 - 12,
+    life: 0.9 + Math.random() * 0.5,
+    age: 0,
+    size: 6 + Math.random() * 6,
+    dark: !!dark,
   });
-  world.audio.boom();
-  // Consequences, applied once at detonation time.
-  const pd = Math.hypot(world.player.x - x, world.player.y - y);
-  if (pd < radius) {
-    damagePlayer(world, big ? 34 : 18);
-  }
-  for (const car of world.cars) {
-    const d = Math.hypot(car.x - x, car.y - y);
-    if (d < radius + 20) car.health -= big ? 45 : 25;
-  }
-  for (const ped of world.peds) {
-    const d = Math.hypot(ped.x - x, ped.y - y);
-    if (d < radius + 90) {
-      ped.state = 'flee';
-      ped.fleeAngle = Math.atan2(ped.y - y, ped.x - x);
-      ped.fleeTime = 2.5;
-    }
+}
+
+export function explode(fx, x, y, big) {
+  fx.blasts.push({ x, y, age: 0, life: big ? 0.7 : 0.45, max: big ? 90 : 55 });
+  burst(fx, x, y, '#ffcf3d', big ? 26 : 14, big ? 320 : 220);
+  burst(fx, x, y, '#ff5a2a', big ? 18 : 10, big ? 220 : 150);
+  for (let i = 0; i < (big ? 5 : 3); i++) {
+    puff(fx, x + (Math.random() - 0.5) * 30, y + (Math.random() - 0.5) * 30, true);
   }
 }
 
-/** Floating text that rises and fades (cash earned, damage, mission notes). */
-export function floatText(world, x, y, text, color) {
-  world.texts.push({ x, y, text, color: color || '#ffffff', life: 1.4, maxLife: 1.4 });
+export function floatText(fx, x, y, text, color) {
+  fx.floats.push({ x, y, text, color: color || '#ffffff', age: 0, life: 1.4 });
 }
 
-/** Damage the player, armor soaking first. Wasted is decided in main.js. */
-export function damagePlayer(world, amount) {
-  const p = world.player;
-  if (p.armor > 0) {
-    const soaked = Math.min(p.armor, amount * 0.6);
-    p.armor -= soaked;
-    p.health -= amount - soaked;
-  } else {
-    p.health -= amount;
+export function stepEffects(fx, dt) {
+  for (const s of fx.sparks) {
+    s.age += dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.vx *= 0.92;
+    s.vy *= 0.92;
   }
-  p.health = Math.max(0, p.health);
-  p.hurtFlash = 0.35;
+  fx.sparks = fx.sparks.filter((s) => s.age < s.life);
+  for (const s of fx.smoke) {
+    s.age += dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.size += 14 * dt;
+  }
+  fx.smoke = fx.smoke.filter((s) => s.age < s.life);
+  for (const b of fx.blasts) b.age += dt;
+  fx.blasts = fx.blasts.filter((b) => b.age < b.life);
+  for (const f of fx.floats) {
+    f.age += dt;
+    f.y -= 34 * dt;
+  }
+  fx.floats = fx.floats.filter((f) => f.age < f.life);
 }
 
-/** Step all particles and floating texts. Call once per frame. */
-export function updateEffects(world, dt) {
-  const parts = world.particles;
-  for (let i = parts.length - 1; i >= 0; i -= 1) {
-    const pt = parts[i];
-    pt.life -= dt;
-    if (pt.life <= 0) {
-      parts.splice(i, 1);
-      continue;
-    }
-    pt.x += pt.vx * dt;
-    pt.y += pt.vy * dt;
-    pt.vy += (pt.grav || 0) * dt;
-    pt.vx *= pt.drag;
-    pt.vy *= pt.drag;
-    if (pt.ring) pt.size = 12 + (1 - pt.life / pt.maxLife) * pt.ringMax;
+export function drawEffects(ctx, fx, cam) {
+  for (const s of fx.smoke) {
+    const a = 0.28 * (1 - s.age / s.life);
+    ctx.fillStyle = s.dark ? `rgba(40,40,40,${a})` : `rgba(220,220,220,${a})`;
+    ctx.beginPath();
+    ctx.arc(s.x - cam.x, s.y - cam.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
   }
-  const texts = world.texts;
-  for (let i = texts.length - 1; i >= 0; i -= 1) {
-    const t = texts[i];
-    t.life -= dt;
-    t.y -= 34 * dt;
-    if (t.life <= 0) texts.splice(i, 1);
+  for (const b of fx.blasts) {
+    const t = b.age / b.life;
+    const r = b.max * (0.3 + 0.7 * t);
+    ctx.fillStyle = `rgba(255,${Math.floor(180 - 120 * t)},40,${0.85 * (1 - t)})`;
+    ctx.beginPath();
+    ctx.arc(b.x - cam.x, b.y - cam.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,240,180,${0.9 * (1 - t)})`;
+    ctx.beginPath();
+    ctx.arc(b.x - cam.x, b.y - cam.y, r * 0.55, 0, Math.PI * 2);
+    ctx.fill();
   }
-  if (world.player.hurtFlash > 0) world.player.hurtFlash = Math.max(0, world.player.hurtFlash - dt);
-  // Keep the arrays bounded even in a long chaotic session.
-  if (parts.length > 600) parts.splice(0, parts.length - 600);
-  if (texts.length > 40) texts.splice(0, texts.length - 40);
+  for (const s of fx.sparks) {
+    ctx.globalAlpha = 1 - s.age / s.life;
+    ctx.fillStyle = s.color;
+    ctx.fillRect(s.x - cam.x - s.size / 2, s.y - cam.y - s.size / 2, s.size, s.size);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 15px system-ui, sans-serif';
+  for (const f of fx.floats) {
+    ctx.globalAlpha = 1 - f.age / f.life;
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x - cam.x, f.y - cam.y);
+  }
+  ctx.globalAlpha = 1;
 }
-
-/** Clamp helper re-export for modules that only import effects. */
-export { clamp };

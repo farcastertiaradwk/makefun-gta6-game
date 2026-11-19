@@ -1,131 +1,173 @@
-// Staged screenshots for SOLMAR HEAT.
-// The game is opened with ?shot=<name> and this module arranges a living
-// diorama for each of the four shots, then the main loop freezes the scene
-// and flags window.__shotReady. Every scene is built from the real game
-// systems (real missions, real police, real traffic) so the screenshots show
-// the game itself, not a mock-up. Seed 7 keeps the city identical between
-// takes.
+// Staged screenshot scenes for SOLMAR HEAT.
+// Each shot builds a real game, stages a dense moment with the game's own
+// systems — chase, wanted stars, minimap, mission objective, police —
+// settles it for a second, then freezes it for the camera. No shot is a
+// mockup: every pixel is the game running.
 
-import { PLACES } from './config.js';
-import { makeCar } from './vehicles.js';
-import { startMission } from './missions.js';
-import { spawnCop, spawnPoliceCar, spawnHeli } from './police.js';
+import { WORLD } from './config.js';
+import { makeVehicle } from './vehicles.js';
 
-/** Put the player in a fresh car at a spot, driving at a speed. */
-function putPlayerInCar(game, x, y, angle, speed, color) {
-  const world = game.world;
-  const car = makeCar('player', x, y, angle, color || '#c23b2e');
-  car.speed = speed;
-  world.cars.push(car);
-  world.player.inCar = car;
-  world.player.x = x;
-  world.player.y = y;
-  world.player.angle = angle;
-  return car;
+export const SHOT_NAMES = ['cover', 'street', 'heli', 'bank'];
+
+export function stageShot(game, name) {
+  game.shotMode = name;
+  game.screen = 'play';
+  if (name === 'cover') stageCover(game);
+  else if (name === 'street') stageStreet(game);
+  else if (name === 'heli') stageHeli(game);
+  else if (name === 'bank') stageBank(game);
+  // The settle pass lets police and traffic find their marks; the freeze
+  // after it keeps the capture frame exactly as staged.
+  game.settleSteps = 60;
+  game.freezeAfterSettle = true;
 }
 
-/** A wrecked car, parked as scenery (for the heli shot's roadblock scene). */
-function putWreck(game, x, y, angle) {
-  const world = game.world;
-  const car = makeCar('traffic', x, y, angle, '#3a9e5f');
-  car.health = 0;
-  car.wrecked = true;
-  world.cars.push(car);
-  return car;
+// The cover: a full-speed getaway up the plaza road — three stars, two
+// police cars on Danny's tail, traffic ahead, Mara in the passenger seat.
+function stageCover(game) {
+  const car = makeVehicle('car', 1050, 1500, -Math.PI / 2, '#d94f3d');
+  car.speed = 400;
+  game.cars.push(car);
+  game.player.inCar = car;
+  game.player.x = car.x;
+  game.player.y = car.y;
+  game.missionIndex = 2;
+  game.missionStage = 1;
+  game.mara = { x: 1050, y: 1500, aboard: true };
+  game.objectiveText = 'Drive Mara to the Safehouse';
+  game.marker = { x: WORLD.places.safehouse.x, y: WORLD.places.safehouse.y };
+  game.wanted = 3;
+  game.bestWanted = 3;
+  game.lastSeenAt = game.time;
+  game.freezeSpeed = 400;
+  // Two police cars in pursuit, close behind.
+  for (const [cx, cy] of [[1050, 1680], [1140, 1740]]) {
+    const cop = makeVehicle('cop', cx, cy, -Math.PI / 2, '#2f5fd9');
+    cop.speed = 380;
+    game.cars.push(cop);
+  }
+  // Traffic ahead to dodge.
+  addTrafficAhead(game, 1050, 1300, 3);
+  // A motorbike parked at the roadside, for the new-vehicle tease.
+  const bike = makeVehicle('bike', 1130, 1420, -Math.PI / 2, '#c23a6e');
+  game.cars.push(bike);
+  game.cash = 420;
 }
 
-/** Traffic cars ahead of the player, in a loose convoy. */
-function addTrafficAhead(game, x, y, count) {
-  const world = game.world;
-  for (let i = 0; i < count; i += 1) {
-    const car = makeCar('traffic', x + world.rng.range(-30, 30), y - i * 90, -Math.PI / 2, '#e8b73a');
+// The street: Danny on foot in Voss Plaza, mid-package-run, with the park
+// pond, pedestrians, traffic and a parked bike in frame.
+function stageStreet(game) {
+  game.player.x = 1000;
+  game.player.y = 1150;
+  game.player.angle = -Math.PI / 2;
+  game.missionIndex = 1;
+  game.missionStage = 1;
+  game.missionTimer = 178;
+  game.missionData = {
+    spots: [
+      { x: 650, y: 650, label: 'Marlowe Park', got: true },
+      { x: 1050, y: 950, label: 'Voss Plaza', got: false },
+      { x: 2250, y: 600, label: 'Harbour', got: false },
+    ],
+    got: 1,
+  };
+  game.objectiveText = 'Collect the packages: 1/3';
+  game.marker = { x: 1050, y: 950 };
+  game.wanted = 0;
+  game.cash = 175;
+  const bike = makeVehicle('bike', 1060, 1210, Math.PI / 2, '#c23a6e');
+  game.cars.push(bike);
+  addTrafficAhead(game, 1000, 900, 2);
+  game.player.mag = 12;
+  game.player.reserve = 48;
+}
+
+// The heli shot: five stars over the plaza, the helicopter and its
+// spotlight above Danny, a roadblock, police cars, and KANE's crew.
+function stageHeli(game) {
+  game.player.x = 1000;
+  game.player.y = 1150;
+  game.player.angle = -Math.PI / 2;
+  game.missionIndex = 7;
+  game.missionStage = 0;
+  game.objectiveText = 'Take down KANE — 0/5';
+  game.marker = { x: 1000, y: 1000 };
+  game.wanted = 5;
+  game.bestWanted = 5;
+  game.lastSeenAt = game.time;
+  game.cash = 950;
+  game.heli = { x: 1000, y: 950, angle: -2.0, rotor: 1.2, searchAt: 0 };
+  // Kane and his Vipers, staged around the fountain.
+  const spots = [
+    { x: 1000, y: 1000, boss: true },
+    { x: 910, y: 930, boss: false },
+    { x: 1090, y: 930, boss: false },
+    { x: 910, y: 1070, boss: false },
+    { x: 1090, y: 1070, boss: false },
+  ];
+  for (const s of spots) {
+    game.enemies.push({
+      x: s.x, y: s.y,
+      hp: s.boss ? 150 : 60, maxHp: s.boss ? 150 : 60,
+      boss: s.boss, name: s.boss ? 'KANE' : 'Viper',
+      angle: Math.PI / 2, shootAt: 9999, dead: false, speed: 150,
+    });
+  }
+  // Three police cars closing in, plus a roadblock on the plaza road.
+  for (const [cx, cy, ca] of [[820, 1000, 0], [1180, 1000, Math.PI], [1000, 820, Math.PI / 2]]) {
+    const cop = makeVehicle('cop', cx, cy, ca, '#2f5fd9');
+    cop.speed = 200;
+    game.cars.push(cop);
+  }
+  for (const off of [-70, 0, 70]) {
+    game.roadblocks.push({ x: 1300 + off, y: 1000, angle: 0 });
+  }
+  // Foot cops on the plaza edge.
+  for (const [cx, cy] of [[900, 1200], [1100, 1200], [1000, 1300]]) {
+    game.cops.push({ x: cx, y: cy, hp: 40, angle: -Math.PI / 2, shootAt: 9999, speed: 190, dead: false });
+  }
+  game.player.mag = 12;
+  game.player.reserve = 48;
+}
+
+// The bank shot: Danny at the vault, the safe 89% cracked, three stars,
+// police converging, the Harbour behind him.
+function stageBank(game) {
+  game.player.x = 2150;
+  game.player.y = 720;
+  game.player.angle = 0;
+  game.missionIndex = 4;
+  game.missionStage = 1;
+  game.crack = 0.89;
+  game.crackBand = 4;
+  game.objectiveText = 'Hold E — cracking the safe…';
+  game.marker = { x: WORLD.places.bankSafe.x, y: WORLD.places.bankSafe.y };
+  game.wanted = 3;
+  game.bestWanted = 3;
+  game.lastSeenAt = game.time;
+  game.cash = 150;
+  // Police converging on the bank from the west road.
+  for (const [cx, cy] of [[1950, 700], [2000, 760], [1900, 640]]) {
+    game.cops.push({ x: cx, y: cy, hp: 40, angle: 0, shootAt: 9999, speed: 190, dead: false });
+  }
+  for (const [cx, cy] of [[1850, 700, 0], [1900, 780, 0]]) {
+    const cop = makeVehicle('cop', cx, cy, 0, '#2f5fd9');
+    cop.speed = 150;
+    game.cars.push(cop);
+  }
+  game.player.mag = 12;
+  game.player.reserve = 48;
+}
+
+function addTrafficAhead(game, x, y, n) {
+  const rng = game.rng.fork('shot-traffic');
+  for (let i = 0; i < n; i++) {
+    const ty = y - i * 130;
+    const car = makeVehicle('car', x + (i % 2 === 0 ? 0 : 46), ty, -Math.PI / 2, rng.choose(['#3d7bd9', '#e8b73a', '#7ac74f']));
+    car.traffic = true;
     car.speed = 150;
-    world.cars.push(car);
+    car.roadAxis = 'y';
+    car.roadLine = x;
+    game.cars.push(car);
   }
-}
-
-/** Two police cars parked across the road: a roadblock. */
-function addRoadblockAt(game, x, y) {
-  const world = game.world;
-  for (const side of [-1, 1]) {
-    const car = makeCar('police', x, y + side * 42, Math.PI / 2, '#20242e');
-    car.roadblock = true;
-    world.cars.push(car);
-  }
-}
-
-/** Step the world forward with the W key held (the car drives itself). */
-function driveForward(game, seconds) {
-  game.input.fakeHold('KeyW');
-  const steps = Math.round(seconds * 60);
-  for (let i = 0; i < steps; i += 1) game.step(1 / 60);
-  game.input.fakeRelease('KeyW');
-}
-
-/** Step the world forward with no input (the scene settles). */
-function settle(game, seconds) {
-  const steps = Math.round(seconds * 60);
-  for (let i = 0; i < steps; i += 1) game.step(1 / 60);
-}
-
-/**
- * Stage one named scene. The game must already be a fresh new game; this
- * function mutates it into the shot and leaves it frozen for capture.
- */
-export function runShot(game, name) {
-  const world = game.world;
-  if (name === 'cover') {
-    // A high-speed chase: Mara in the passenger seat, three stars, two
-    // interceptors closing in, traffic ahead, plaza and park in frame.
-    startMission(world, 2);
-    const car = putPlayerInCar(game, 1050, 1500, -Math.PI / 2, 430, '#c23b2e');
-    addTrafficAhead(game, 1050, 950, 3);
-    spawnPoliceCar(world);
-    spawnPoliceCar(world);
-    driveForward(game, 1.5);
-    // Freeze the moment at full speed: the chase is captured mid-flight.
-    car.speed = 400;
-  } else if (name === 'street') {
-    // On foot in the plaza, mid-package-run: one of three collected, the
-    // timer at 178 seconds, peds and traffic living around the player.
-    startMission(world, 1);
-    world.mission.data.collected = 1;
-    world.mission.objective = 'Collect the packages: 1/3';
-    world.mission.timer = 178;
-    world.player.x = 1000;
-    world.player.y = 1150;
-    world.player.inCar = null;
-    addTrafficAhead(game, 1000, 800, 2);
-    settle(game, 0.4);
-  } else if (name === 'heli') {
-    // Five stars at the plaza: the helicopter overhead with its spotlight,
-    // three interceptors, a roadblock and a wreck ahead, Kane's job live.
-    startMission(world, 5);
-    world.wanted = 5;
-    putPlayerInCar(game, 1450, 950, 0, 60, '#2e6fc2');
-    spawnHeli(world);
-    if (world.heli) world.heli.angle = -2.0;
-    addRoadblockAt(game, 1900, 950);
-    putWreck(game, 1820, 910, 0.4);
-    spawnPoliceCar(world);
-    spawnPoliceCar(world);
-    spawnPoliceCar(world);
-    settle(game, 1.2);
-  } else if (name === 'bank') {
-    // The bank job at its tensest: the safe is 89% cracked, the crew is in
-    // the vault, and the police are converging on Harbor Bank.
-    startMission(world, 4);
-    world.mission.stage = 1;
-    world.mission.objective = 'Crack the safe — hold E';
-    world.mission.data.crack = 89;
-    world.player.x = 2150;
-    world.player.y = 720;
-    world.player.inCar = null;
-    world.wanted = 3;
-    spawnCop(world);
-    spawnCop(world);
-    spawnPoliceCar(world);
-    settle(game, 0.3);
-  }
-  world.screen = 'play';
 }

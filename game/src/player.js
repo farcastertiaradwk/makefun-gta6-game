@@ -1,302 +1,204 @@
-// The player on foot: Danny Reyes, wheelman out of work.
-// Movement (WASD, Shift to sprint), aiming with the mouse, the pistol
-// (12-round magazine, R reloads), picking things up by walking over them,
-// and the E key: steal a car, get out of one, crack the safe, use a shop.
-// When Danny is in a car the car module owns movement; this module owns
-// everything on foot, plus the shooting that works in both states.
+// Danny Reyes on foot: walking, sprinting, aiming, shooting, picking up
+// health and ammo, and talking to shops. When he is in a car this module
+// idles — vehicles.js owns driving.
 
-import { PLAYER, KEYS, CARS, PRICES, PLACES } from './config.js';
-import { clamp, dist, wrapAngle } from './random.js';
-import { moveVector } from './input.js';
-import { muzzle, floatText, damagePlayer } from './effects.js';
+import { PLAYER, KEYS, PRICES } from './config.js';
+import { heldMove } from './input.js';
+import { collideBuildings, clampWorld, inWater } from './city.js';
+import { burst, floatText } from './effects.js';
 
-/** Fresh player, standing by the Safehouse. */
-export function makePlayer() {
+export function makePlayer(x, y) {
   return {
-    x: 300,
-    y: 1600,
+    x, y,
     angle: -Math.PI / 2,
-    health: PLAYER.maxHealth,
+    hp: PLAYER.hp,
     armor: 0,
-    radius: PLAYER.radius,
-    /** The car Danny is driving, or null when on foot. */
+    speed: 0,
     inCar: null,
-    weapon: { mag: PLAYER.magSize, reserve: PLAYER.startReserve, magSize: PLAYER.magSize },
-    /** Seconds until the next shot is allowed. */
-    fireCooldown: 0,
-    /** Seconds since the last shot (for the fire animation). */
-    sinceShot: 99,
-    hurtFlash: 0,
-    sprinting: false,
+    mag: PLAYER.magSize,
+    reserve: 48,
+    reloading: 0,
+    shootCooldown: 0,
+    lastHurtAt: -99,
     moving: false,
-    /** Quirk preserved from the design: this field exists but is never set;
-     *  peds flee from gunfire through the direct bullet check instead. */
-    lastShotAt: null,
   };
 }
 
-/** Aim the player at the mouse (screen space -> world space via camera). */
-export function aimAtMouse(world) {
-  const p = world.player;
-  const cam = world.camera;
-  const wx = world.input.mouse.x + cam.x;
-  const wy = world.input.mouse.y + cam.y;
+export function stepPlayer(game, dt) {
+  const p = game.player;
+  const input = game.input;
+  if (p.inCar || game.screen !== 'play') return;
+  p.shootCooldown = Math.max(0, p.shootCooldown - dt);
+  if (p.reloading > 0) {
+    p.reloading -= dt;
+    if (p.reloading <= 0) {
+      const need = PLAYER.magSize - p.mag;
+      const take = Math.min(need, p.reserve);
+      p.mag += take;
+      p.reserve -= take;
+      p.reloading = 0;
+    }
+  }
+
+  // Movement: WASD or arrows, Shift to sprint.
+  let dx = 0;
+  let dy = 0;
+  if (heldMove(input, KEYS.right)) dx += 1;
+  if (heldMove(input, KEYS.left)) dx -= 1;
+  if (heldMove(input, KEYS.down)) dy += 1;
+  if (heldMove(input, KEYS.up)) dy -= 1;
+  const sprinting = input.is(KEYS.sprint) || input.is(KEYS.sprintRight);
+  const speed = sprinting ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
+  p.moving = dx !== 0 || dy !== 0;
+  if (p.moving) {
+    const len = Math.hypot(dx, dy);
+    p.x += (dx / len) * speed * dt;
+    p.y += (dy / len) * speed * dt;
+    p.speed = speed;
+  } else {
+    p.speed = 0;
+  }
+  collideBuildings(game.city, p, PLAYER.radius);
+  clampWorld(p, 20);
+  if (inWater(p.x, p.y)) {
+    // The Harbour is not swimmable: push Danny back onto the docks.
+    p.x = Math.min(p.x, 2390);
+  }
+
+  // Aim at the mouse; click to shoot.
+  const cam = game.camera;
+  const wx = input.mouse.x + cam.x;
+  const wy = input.mouse.y + cam.y;
   p.angle = Math.atan2(wy - p.y, wx - p.x);
+  if (input.take('reload')) {
+    if (p.mag < PLAYER.magSize && p.reserve > 0 && p.reloading <= 0) {
+      p.reloading = PLAYER.reloadTime;
+    }
+  }
+  if (input.mouse.down && p.shootCooldown <= 0 && p.reloading <= 0) {
+    shootPistol(game);
+  }
+
+  // Health and ammo pickups scattered around the city.
+  for (const pk of game.pickups) {
+    if (pk.taken) continue;
+    const d = Math.hypot(p.x - pk.x, p.y - pk.y);
+    if (d < PLAYER.pickupRadius) {
+      pk.taken = true;
+      if (pk.kind === 'health') {
+        p.hp = Math.min(PLAYER.hp, p.hp + 30);
+        floatText(game.fx, p.x, p.y - 20, '+30 HP', '#7ac74f');
+      } else {
+        p.reserve = Math.min(PLAYER.reserveMax, p.reserve + 24);
+        floatText(game.fx, p.x, p.y - 20, '+24 AMMO', '#e8b73a');
+      }
+      game.audio.pickup();
+    }
+  }
+
+  // Shop prompts: standing at a shop and pressing E buys. The garage also
+  // serves a car driven up to its door.
+  game.shopPrompt = shopNear(game);
+  if (game.shopPrompt && input.take('interact')) {
+    buyAtShop(game, game.shopPrompt);
+  }
 }
 
-/** Fire one pistol round from the player (on foot or leaning out of a car). */
-export function shootPistol(world) {
-  const p = world.player;
-  if (p.fireCooldown > 0) return false;
-  if (p.weapon.mag <= 0) {
-    world.audio.tone(140, 0.06, 'square', 0.06);
-    p.fireCooldown = 0.25;
-    return false;
+export function shootPistol(game) {
+  const p = game.player;
+  if (p.mag <= 0) {
+    if (p.reserve > 0) p.reloading = PLAYER.reloadTime;
+    return;
   }
-  p.weapon.mag -= 1;
-  p.fireCooldown = PLAYER.fireInterval;
-  p.sinceShot = 0;
-  const sx = p.x + Math.cos(p.angle) * 20;
-  const sy = p.y + Math.sin(p.angle) * 20;
-  world.bullets.push({
-    x: sx,
-    y: sy,
-    vx: Math.cos(p.angle) * PLAYER.bulletSpeed,
-    vy: Math.sin(p.angle) * PLAYER.bulletSpeed,
-    travelled: 0,
-    range: PLAYER.bulletRange,
-    damage: PLAYER.bulletDamage,
-    fromPlayer: true,
+  p.mag -= 1;
+  p.shootCooldown = PLAYER.shootInterval;
+  const gx = p.x + Math.cos(p.angle) * 20;
+  const gy = p.y + Math.sin(p.angle) * 20;
+  game.bullets.push({
+    x: gx, y: gy,
+    vx: Math.cos(p.angle) * 900,
+    vy: Math.sin(p.angle) * 900,
+    from: 'player',
+    damage: PLAYER.pistolDamage,
+    life: PLAYER.pistolRange / 900,
   });
-  muzzle(world, sx, sy, p.angle);
-  world.audio.shot();
-  // Shooting is a crime, but the heat is throttled: at most once per
-  // shootHeatCooldown seconds, so a long firefight does not jump straight
-  // to five stars on the first magazine.
-  const now = world.time;
-  if (now - (world.lastShootHeatAt || -99) > 2) {
-    world.lastShootHeatAt = now;
-    if (world.wanted < 5) world.wanted += 1;
-  }
-  return true;
+  burst(game.fx, gx, gy, '#ffd94d', 4, 120);
+  game.audio.shot();
+  game.addWanted('shoot');
 }
 
-/** Reload the pistol from the reserve. */
-export function reloadWeapon(world) {
-  const w = world.player.weapon;
-  if (w.mag >= w.magSize || w.reserve <= 0) return;
-  const need = w.magSize - w.mag;
-  const take = Math.min(need, w.reserve);
-  w.mag += take;
-  w.reserve -= take;
-  world.audio.tone(440, 0.07, 'square', 0.08);
-}
-
-/** Walk the player; called only while on foot. */
-function walkPlayer(world, dt) {
-  const p = world.player;
-  const input = world.input;
-  const mv = moveVector(input);
-  p.sprinting = input.isDown(KEYS.sprint) && (mv.x !== 0 || mv.y !== 0);
-  const speed = p.sprinting ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
-  p.moving = mv.x !== 0 || mv.y !== 0;
-  const nx = p.x + mv.x * speed * dt;
-  const ny = p.y + mv.y * speed * dt;
-  const hit = collideWorld(world, nx, ny, p.radius);
-  p.x = hit.x;
-  p.y = hit.y;
-  aimAtMouse(world);
-}
-
-/** Keep a circle out of buildings, water and the world edge. */
-export function collideWorld(world, x, y, radius) {
-  let nx = clamp(x, radius + 8, 2600 - radius - 8);
-  let ny = clamp(y, radius + 8, 2600 - radius - 8);
-  // Harbour water blocks movement (except on the piers).
-  if (nx >= PLACES.harbourX - radius) {
-    let onPier = false;
-    for (const pier of world.city.piers) {
-      if (ny >= pier.y && ny <= pier.y + pier.h && nx >= pier.x - 10) onPier = true;
-    }
-    if (!onPier) nx = PLACES.harbourX - radius;
-  }
-  // Buildings are solid.
-  for (const block of world.city.blocks) {
-    for (const b of block.buildings) {
-      if (nx + radius > b.x && nx - radius < b.x + b.w && ny + radius > b.y && ny - radius < b.y + b.h) {
-        const pushLeft = nx + radius - b.x;
-        const pushRight = b.x + b.w - (nx - radius);
-        const pushUp = ny + radius - b.y;
-        const pushDown = b.y + b.h - (ny - radius);
-        const min = Math.min(pushLeft, pushRight, pushUp, pushDown);
-        if (min === pushLeft) nx = b.x - radius;
-        else if (min === pushRight) nx = b.x + b.w + radius;
-        else if (min === pushUp) ny = b.y - radius;
-        else ny = b.y + b.h + radius;
-      }
-    }
-  }
-  return { x: nx, y: ny };
-}
-
-/** Pickups Danny walks over: health, ammo, mission packages. */
-function collectPickups(world) {
-  const p = world.player;
-  for (let i = world.pickups.length - 1; i >= 0; i -= 1) {
-    const pk = world.pickups[i];
-    if (dist(p.x, p.y, pk.x, pk.y) > PLAYER.pickupRadius) continue;
-    if (pk.kind === 'health') {
-      if (p.health >= PLAYER.maxHealth) continue;
-      p.health = Math.min(PLAYER.maxHealth, p.health + PLAYER.pickupHealth);
-      floatText(world, pk.x, pk.y - 10, `+${PLAYER.pickupHealth} HP`, '#7be382');
-      world.audio.pickup();
-      world.pickups.splice(i, 1);
-    } else if (pk.kind === 'ammo') {
-      if (p.weapon.reserve >= PLAYER.maxReserve) continue;
-      p.weapon.reserve = Math.min(PLAYER.maxReserve, p.weapon.reserve + PLAYER.pickupAmmo);
-      floatText(world, pk.x, pk.y - 10, `+${PLAYER.pickupAmmo} AMMO`, '#ffd94d');
-      world.audio.pickup();
-      world.pickups.splice(i, 1);
-    } else if (pk.kind === 'package') {
-      world.pickups.splice(i, 1);
-      world.audio.coin();
-      if (world.mission && world.mission.index === 1) {
-        world.mission.data.collected += 1;
-        const n = world.mission.data.collected;
-        world.mission.objective = `Collect the packages: ${n}/3`;
-        floatText(world, pk.x, pk.y - 10, `Package ${n}/3`, '#ffd94d');
-      }
-    }
-  }
-}
-
-/**
- * The E key, context-sensitive:
- *  - near the bank safe during mission 5: crack (handled by missions, this
- *    only reports that E is held);
- *  - near a shop: buy;
- *  - near a car while on foot: steal it;
- *  - while driving: get out.
- * Returns a short label for the prompt line, or null.
- */
-export function interactLabel(world) {
-  const p = world.player;
-  if (p.inCar) return 'E — Get out';
-  if (world.mission && world.mission.index === 4 && world.mission.stage === 1) {
-    const s = world.city.bankSafe;
-    if (dist(p.x, p.y, s.x, s.y) < 100) return 'Hold E — Crack the safe';
-  }
-  const shop = nearestShop(world);
-  if (shop) return `E — ${shop.action}`;
-  const car = nearestStealable(world);
-  if (car) return 'E — Steal car';
-  return null;
-}
-
-function nearestShop(world) {
-  const p = world.player;
-  const shops = [
-    { key: 'gunshop', x: PLACES.gunshop.x + 60, y: PLACES.gunshop.y + 45, action: 'Buy ammo $60 / armor $120', kind: 'gun' },
-    { key: 'garage', x: PLACES.garage.x + 70, y: PLACES.garage.y + 50, action: 'Repair $80 / Lay low $100 per star', kind: 'garage' },
-    { key: 'safehouse', x: PLACES.safehouse.x + 60, y: PLACES.safehouse.y + 45, action: 'Rest — heal & clear wanted', kind: 'safe' },
-  ];
-  for (const s of shops) {
-    if (dist(p.x, p.y, s.x, s.y) < 95) return s;
+function shopNear(game) {
+  const p = game.player;
+  const at = p.inCar ? p.inCar : p;
+  const places = game.cityPlaces;
+  for (const key of ['gunshop', 'garage', 'safehouse']) {
+    const place = places[key];
+    if (Math.hypot(at.x - place.x, at.y - place.y) < place.r + 40) return key;
   }
   return null;
 }
 
-export function nearestStealable(world) {
-  const p = world.player;
-  let best = null;
-  let bestD = 60;
-  for (const car of world.cars) {
-    if (car.kind !== 'parked' || car.wrecked) continue;
-    const d = dist(p.x, p.y, car.x, car.y);
-    if (d < bestD) {
-      bestD = d;
-      best = car;
+function buyAtShop(game, shop) {
+  const p = game.player;
+  if (shop === 'gunshop') {
+    if (p.inCar) return;
+    if (game.cash >= PRICES.ammo && p.reserve < PLAYER.reserveMax) {
+      game.cash -= PRICES.ammo;
+      p.reserve = Math.min(PLAYER.reserveMax, p.reserve + PRICES.ammoPack);
+      floatText(game.fx, p.x, p.y - 24, `AMMO +${PRICES.ammoPack}  -$${PRICES.ammo}`, '#e8b73a');
+      game.audio.cash();
+    } else if (game.cash >= PRICES.armor && p.armor < 100) {
+      game.cash -= PRICES.armor;
+      p.armor = 100;
+      floatText(game.fx, p.x, p.y - 24, `ARMOR  -$${PRICES.armor}`, '#7ac74f');
+      game.audio.cash();
     }
+  } else if (shop === 'garage') {
+    // In a car: repair it. On foot: pay to lay low, one star at a time.
+    if (p.inCar) {
+      const car = p.inCar;
+      if (game.cash >= PRICES.repair && car.hp < car.maxHp) {
+        game.cash -= PRICES.repair;
+        car.hp = car.maxHp;
+        floatText(game.fx, car.x, car.y - 24, `REPAIRED  -$${PRICES.repair}`, '#7ac74f');
+        game.audio.cash();
+      }
+      return;
+    }
+    if (game.cash >= PRICES.laylow && game.wanted > 0) {
+      const cost = PRICES.laylow * game.wanted;
+      if (game.cash >= cost) {
+        game.cash -= cost;
+        game.wanted = 0;
+        floatText(game.fx, p.x, p.y - 24, `LAY LOW  -$${cost}`, '#7ac74f');
+        game.audio.cash();
+      }
+    }
+  } else if (shop === 'safehouse') {
+    if (p.inCar) return;
+    p.hp = PLAYER.hp;
+    game.wanted = 0;
+    floatText(game.fx, p.x, p.y - 24, 'RESTED — HEAT GONE', '#7ac74f');
+    game.audio.pickup();
   }
-  return best;
 }
 
-/** Buy at a shop. Called once per E press near a shop. */
-export function useShop(world) {
-  const p = world.player;
-  const shop = nearestShop(world);
-  if (!shop) return false;
-  if (shop.kind === 'gun') {
-    if (world.cash < PRICES.ammo) {
-      floatText(world, p.x, p.y - 20, 'Not enough cash', '#ff7a6e');
-      return true;
-    }
-    world.cash -= PRICES.ammo;
-    p.weapon.reserve = Math.min(PLAYER.maxReserve, p.weapon.reserve + PRICES.ammoPack);
-    if (world.cash >= PRICES.armor && p.armor < PLAYER.maxArmor) {
-      world.cash -= PRICES.armor;
-      p.armor = PLAYER.maxArmor;
-      floatText(world, p.x, p.y - 20, 'Ammo + armor', '#ffd94d');
-    } else {
-      floatText(world, p.x, p.y - 20, 'Ammo restocked', '#ffd94d');
-    }
-    world.audio.coin();
-    return true;
+// Damage the player, through armor first. Returns true if he is wasted.
+export function hurtPlayer(game, dmg) {
+  const p = game.player;
+  if (game.time - p.lastHurtAt < 0.15) return false;
+  p.lastHurtAt = game.time;
+  let rest = dmg;
+  if (p.armor > 0) {
+    const absorbed = Math.min(p.armor, rest);
+    p.armor -= absorbed;
+    rest -= absorbed;
   }
-  if (shop.kind === 'garage') {
-    if (world.cash >= PRICES.repair && p.inCar && p.inCar.health < CARS.maxHealth) {
-      world.cash -= PRICES.repair;
-      p.inCar.health = CARS.maxHealth;
-      floatText(world, p.x, p.y - 20, 'Car repaired', '#7be382');
-      world.audio.coin();
-      return true;
-    }
-    if (world.wanted > 0 && world.cash >= PRICES.layLowPerStar * world.wanted) {
-      world.cash -= PRICES.layLowPerStar * world.wanted;
-      world.wanted = 0;
-      floatText(world, p.x, p.y - 20, 'Heat cleared', '#7be382');
-      world.audio.coin();
-      return true;
-    }
-    floatText(world, p.x, p.y - 20, 'Nothing to fix', '#ff7a6e');
-    return true;
-  }
-  if (shop.kind === 'safe') {
-    p.health = PLAYER.maxHealth;
-    world.wanted = 0;
-    floatText(world, p.x, p.y - 20, 'Rested — wanted cleared', '#7be382');
-    world.audio.pickup();
+  p.hp -= rest;
+  burst(game.fx, p.x, p.y, '#ff3d3d', 5, 140);
+  if (p.hp <= 0) {
+    p.hp = 0;
     return true;
   }
   return false;
 }
-
-/** Per-frame player update (on foot). Driving is the car module's job. */
-export function updatePlayer(world, dt) {
-  const p = world.player;
-  if (p.fireCooldown > 0) p.fireCooldown -= dt;
-  p.sinceShot += dt;
-  if (p.inCar) {
-    // Danny rides with the car; aim follows the mouse for drive-by shots.
-    p.x = p.inCar.x;
-    p.y = p.inCar.y;
-    p.angle = p.inCar.angle;
-    aimAtMouse(world);
-    if (world.input.mouse.down) shootPistol(world);
-    return;
-  }
-  walkPlayer(world, dt);
-  if (world.input.mouse.down) shootPistol(world);
-  collectPickups(world);
-  if (p.health <= 0) {
-    world.screen = 'wasted';
-    world.audio.fail();
-  }
-}
-
-/** Heal the player to full (safehouse rest, mission start safety net). */
-export function healFull(world) {
-  world.player.health = PLAYER.maxHealth;
-}
-
-export { damagePlayer };

@@ -1,1 +1,1 @@
-[{"name":"1-cover.jpg","query":"?shot=cover"},{"name":"2-street.jpg","query":"?shot=street"},{"name":"3-heli.jpg","query":"?shot=heli"},{"name":"4-bank.jpg","query":"?shot=bank"}]
+{"cover":"1-cover.jpg","format":"jpeg","shots":["1-cover.jpg","2-street.jpg","3-heli.jpg","4-bank.jpg"],"size":"1280x720"}

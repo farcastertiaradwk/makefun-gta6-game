@@ -1,126 +1,60 @@
 // Seeded random numbers for SOLMAR HEAT.
-// One small deterministic generator drives the whole city: the same seed
-// always deals the same streets, buildings, traffic and pedestrians, so a
-// screenshot staged from seed 7 looks the same every time it is taken.
-// The generator below is a 32-bit hash-and-mix (xmur3 style seeding feeding
-// a mulberry32 stream). It is written from scratch for this game.
+// The city, traffic, pedestrians and explosions all draw from one seeded
+// stream, so seed 7 always builds the same Solmar. Nothing here touches
+// Math.random: a fresh page with the same seed is the same city.
 
-/** Turn an arbitrary seed (number or string) into four 32-bit state words. */
-function seedWords(seed) {
-  let h = 1779033703 ^ String(seed).length;
-  const text = String(seed);
-  for (let i = 0; i < text.length; i += 1) {
-    h = Math.imul(h ^ text.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
+export function hashSeed(text) {
+  // xmur3-style string hash: folds the text into four 32-bit lanes.
+  let h1 = 0xdeadbeef ^ 0;
+  let h2 = 0x41c6ce57 ^ 0;
+  let h3 = 0x9e3779b9 ^ 0;
+  let h4 = 0x85ebca6b ^ 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+    h3 = Math.imul(h3 ^ c, 2246822519);
+    h4 = Math.imul(h4 ^ c, 3266489917);
   }
-  const words = [];
-  for (let k = 0; k < 4; k += 1) {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    h ^= h >>> 16;
-    words.push(h >>> 0);
-  }
-  return words;
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h3 ^ (h3 >>> 13), 3266489909);
+  h3 = Math.imul(h3 ^ (h3 >>> 16), 2246822507) ^ Math.imul(h4 ^ (h4 >>> 13), 3266489909);
+  h4 = Math.imul(h4 ^ (h4 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return [h1 >>> 0, h2 >>> 0, h3 >>> 0, h4 >>> 0];
 }
 
-/**
- * Make a seeded random source.
- * Every method consumes the stream in call order, so two runs that call the
- * same methods in the same order get the same numbers. Keep call order
- * stable and the city rebuilds identically.
- */
-export function makeRng(seed) {
-  const state = seedWords(seed);
-  let a = state[0];
-  let b = state[1];
-  let c = state[2];
-  let d = state[3];
-
-  /** Next float in [0, 1). */
+export function makeRng(seedText) {
+  // mulberry32 over the first hash lane; the other lanes seed sub-streams.
+  const lanes = hashSeed(seedText);
+  let a = lanes[0];
   function next() {
-    // mulberry32 step over the four words, rotated so the stream mixes well.
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    const out = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    // Stir the spare words so long streams do not fall into short cycles.
-    b = (Math.imul(b, 1664525) + 1013904223 + (d & 0xffff)) >>> 0;
-    c = (c ^ (c << 5) ^ (b >>> 3)) >>> 0;
-    d = (d + 0x9e3779b9 + (c & 0xffff)) >>> 0;
-    return out;
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
-
-  /** Float in [low, high). */
-  function range(low, high) {
-    return low + next() * (high - low);
-  }
-
-  /** Integer in [low, high] inclusive. */
-  function whole(low, high) {
-    return low + Math.floor(next() * (high - low + 1));
-  }
-
-  /** Pick one element of an array. */
-  function choose(list) {
-    return list[Math.floor(next() * list.length)];
-  }
-
-  /** True with probability p (0..1). */
-  function maybe(p) {
-    return next() < p;
-  }
-
-  /** Shuffle a copy of an array (Fisher-Yates, stream order preserved). */
-  function shuffled(list) {
-    const copy = list.slice();
-    for (let i = copy.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(next() * (i + 1));
-      const tmp = copy[i];
-      copy[i] = copy[j];
-      copy[j] = tmp;
-    }
-    return copy;
-  }
-
-  /** A fresh child stream derived from this one (for one-off bursts). */
-  function fork(tag) {
-    return makeRng(`${seed}:${tag}:${Math.floor(next() * 1e9)}`);
-  }
-
-  return { next, range, whole, choose, maybe, shuffled, fork };
-}
-
-/** Clamp a number into [low, high]. */
-export function clamp(value, low, high) {
-  if (value < low) return low;
-  if (value > high) return high;
-  return value;
-}
-
-/** Shortest signed angle difference from a to b, in (-PI, PI]. */
-export function angleDelta(a, b) {
-  let d = b - a;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d <= -Math.PI) d += Math.PI * 2;
-  return d;
-}
-
-/** Wrap an angle into (-PI, PI]. */
-export function wrapAngle(a) {
-  while (a > Math.PI) a -= Math.PI * 2;
-  while (a <= -Math.PI) a += Math.PI * 2;
-  return a;
-}
-
-/** Euclidean distance between two points. */
-export function dist(x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-/** Linear interpolation. */
-export function lerp(a, b, t) {
-  return a + (b - a) * t;
+  return {
+    next,
+    // Float in [lo, hi).
+    range(lo, hi) {
+      return lo + (hi - lo) * next();
+    },
+    // Integer in [lo, hi] inclusive.
+    whole(lo, hi) {
+      return lo + Math.floor(next() * (hi - lo + 1));
+    },
+    // One element of a non-empty array.
+    choose(arr) {
+      return arr[Math.floor(next() * arr.length)];
+    },
+    // True with probability p.
+    maybe(p) {
+      return next() < p;
+    },
+    // Fresh sub-stream so one system never starves another.
+    fork(tag) {
+      return makeRng(seedText + ':' + tag);
+    },
+  };
 }
